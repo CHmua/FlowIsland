@@ -646,9 +646,9 @@ const openMywebsite = () => {
 const silentCheckUpdate = async () => {
     try {
         const localVersionStr = await getVersion();
-        const response = await fetch('https://api.github.com/repos/GEORGEWWWU/NetSpeed-Dynamic/releases/latest', {
+        const response = await fetch('https://api.github.com/repos/CHmua/FlowIsland/releases/latest', {
             method: 'GET',
-            headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Tauri-App-NetSpeed-Dynamic' }
+            headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'FlowIsland' }
         });
         if (!response.ok) return;
 
@@ -683,11 +683,11 @@ const checkUpdate = async () => {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-        const response = await fetch('https://api.github.com/repos/GEORGEWWWU/NetSpeed-Dynamic/releases/latest', {
+        const response = await fetch('https://api.github.com/repos/CHmua/FlowIsland/releases/latest', {
             method: 'GET',
             headers: {
                 'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'Tauri-App-NetSpeed-Dynamic'
+                'User-Agent': 'FlowIsland'
             },
             signal: controller.signal
         });

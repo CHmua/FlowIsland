@@ -437,7 +437,7 @@ const checkUpdate = async () => {
     if (isChecking.value) return;
     isChecking.value = true;
     try {
-        const response = await fetch('https://api.github.com/repos/GEORGEWWWU/NetSpeed-Dynamic/releases/latest', {
+        const response = await fetch('https://api.github.com/repos/CHmua/FlowIsland/releases/latest', {
             headers: { Accept: 'application/vnd.github+json' },
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
