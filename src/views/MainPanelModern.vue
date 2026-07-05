@@ -170,6 +170,7 @@ import { emit, listen } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import {
     AudioLines,
     Bell,
@@ -439,6 +440,8 @@ type UpdateReleaseInfo = {
     name?: string;
     htmlUrl?: string;
     html_url?: string;
+    downloadUrl?: string | null;
+    download_url?: string | null;
     source?: string;
     fetchedAt?: number;
 };
@@ -447,6 +450,7 @@ type NormalizedReleaseInfo = {
     tagName: string;
     name: string;
     htmlUrl: string;
+    downloadUrl: string;
     source: string;
     fetchedAt: number;
 };
@@ -473,6 +477,7 @@ const normalizeReleaseInfo = (raw: UpdateReleaseInfo | null | undefined): Normal
         tagName,
         name: raw.name || tagName,
         htmlUrl: raw.htmlUrl || raw.html_url || 'https://github.com/CHmua/FlowIsland/releases/latest',
+        downloadUrl: raw.downloadUrl || raw.download_url || raw.htmlUrl || raw.html_url || 'https://github.com/CHmua/FlowIsland/releases/latest',
         source: raw.source || 'unknown',
         fetchedAt: raw.fetchedAt || Date.now(),
     };
@@ -506,10 +511,20 @@ const showUpdateResult = (release: NormalizedReleaseInfo, fromCache = false, pre
     hasNewVersion.value = hasUpdate;
     const cacheText = fromCache ? `\n\n结果来自 ${formatCacheAge(release.fetchedAt)} 的本地缓存。` : '';
     const sourceText = release.source === 'github-page' ? '\n\n已使用 GitHub Releases 页面兜底检查。' : '';
-    showDialog(
-        hasUpdate ? '发现新版本' : '已是最新版本',
-        `${prefix}${hasUpdate ? `检测到新版本 ${release.tagName}` : '当前已经是最新版本。'}${sourceText}${cacheText}`
-    );
+    if (hasUpdate) {
+        showDialog(
+            '发现新版本',
+            `${prefix}检测到新版本 ${release.tagName}。\n\n点击确定将打开安装包下载地址。${sourceText}${cacheText}`,
+            true,
+            () => {
+                openUrl(release.downloadUrl || release.htmlUrl);
+                hasNewVersion.value = false;
+            }
+        );
+        return;
+    }
+
+    showDialog('已是最新版本', `${prefix}当前已经是最新版本。${sourceText}${cacheText}`);
 };
 
 const checkUpdate = async () => {
@@ -1408,6 +1423,7 @@ body {
     margin: 14px 0 0;
     color: rgba(203, 213, 225, 0.78);
     line-height: 1.6;
+    white-space: pre-line;
 }
 
 .modal-actions {

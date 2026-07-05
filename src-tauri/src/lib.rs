@@ -130,6 +130,7 @@ pub struct ReleaseInfo {
     pub tag_name: String,
     pub name: String,
     pub html_url: String,
+    pub download_url: Option<String>,
     pub source: String,
 }
 
@@ -3840,6 +3841,43 @@ fn extract_release_tag_from_url(url: &str) -> Option<String> {
     }
 }
 
+fn release_download_url_from_tag(tag_name: &str) -> Option<String> {
+    let version = tag_name.trim_start_matches('v');
+    if version.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "https://github.com/CHmua/FlowIsland/releases/download/{}/FlowIsland_{}_x64-setup.exe",
+        tag_name, version
+    ))
+}
+
+fn pick_installer_download_url(data: &serde_json::Value) -> Option<String> {
+    let assets = data.get("assets")?.as_array()?;
+    assets
+        .iter()
+        .find_map(|asset| {
+            let name = asset.get("name")?.as_str()?.to_lowercase();
+            let url = asset.get("browser_download_url")?.as_str()?;
+            if name.ends_with(".exe") && name.contains("setup") {
+                Some(url.to_string())
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            assets.iter().find_map(|asset| {
+                let name = asset.get("name")?.as_str()?.to_lowercase();
+                let url = asset.get("browser_download_url")?.as_str()?;
+                if name.ends_with(".msi") {
+                    Some(url.to_string())
+                } else {
+                    None
+                }
+            })
+        })
+}
+
 fn github_rate_limit_reset_text(headers: &reqwest::header::HeaderMap) -> Option<String> {
     let reset = headers
         .get("x-ratelimit-reset")
@@ -3872,6 +3910,7 @@ async fn fetch_release_from_github_latest_page(client: &reqwest::Client) -> Resu
     Ok(ReleaseInfo {
         name: tag_name.trim_start_matches('v').to_string(),
         html_url: final_url,
+        download_url: release_download_url_from_tag(&tag_name),
         tag_name,
         source: "github-page".to_string(),
     })
@@ -3917,6 +3956,8 @@ async fn fetch_latest_release_info() -> Result<ReleaseInfo, String> {
                     .and_then(|value| value.as_str())
                     .unwrap_or("https://github.com/CHmua/FlowIsland/releases/latest")
                     .to_string(),
+                download_url: pick_installer_download_url(&data)
+                    .or_else(|| release_download_url_from_tag(&tag_name)),
                 tag_name,
                 source: "github-api".to_string(),
             })
