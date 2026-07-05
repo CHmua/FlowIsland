@@ -2105,6 +2105,24 @@ const isMsgActive = ref(false);
 const msgTitle = ref('');
 const msgBody = ref('');
 const msgAumid = ref('');
+type SystemStatusPayload = {
+    hasBattery: boolean;
+    isCharging: boolean;
+    isOnBattery: boolean;
+    batteryPercent?: number | null;
+    volumePercent?: number | null;
+};
+type MessageIslandPayload = {
+    appName: string;
+    title: string;
+    body?: string;
+    aumid?: string;
+    iconName?: string;
+    durationMs?: number;
+};
+let lastSystemStatus: SystemStatusPayload | null = null;
+let pendingVolumePercent: number | null = null;
+let volumeNotifyTimer: number | null = null;
 
 // 👇把里面的 app_name 改回 appName
 const handleMsgClick = async () => {
@@ -2245,6 +2263,80 @@ const getAppIcon = (appName: string) => {
     }
 
     return defaultLogo;
+};
+
+const showMessageIsland = async ({
+    appName,
+    title,
+    body = '',
+    aumid = '',
+    iconName,
+    durationMs = 4200,
+}: MessageIslandPayload) => {
+    msgTitle.value = appName;
+    msgAumid.value = aumid;
+    msgBody.value = body ? `${title}: ${body}` : title;
+    currentMsgIcon.value = getAppIcon(iconName || appName);
+
+    if (!isMsgActive.value) {
+        isMsgActive.value = true;
+        await syncIslandVisibility();
+        if (!isPinnedToTaskbar.value) {
+            animateIslandSize(MESSAGE_WIDTH, MESSAGE_HEIGHT);
+        }
+    }
+
+    if ((window as any).msgTimer) clearTimeout((window as any).msgTimer);
+    (window as any).msgTimer = setTimeout(() => {
+        isMsgActive.value = false;
+        syncIslandVisibility().catch(console.error);
+    }, durationMs);
+};
+
+const scheduleVolumeMessage = (percent: number) => {
+    pendingVolumePercent = percent;
+    if (volumeNotifyTimer !== null) clearTimeout(volumeNotifyTimer);
+    volumeNotifyTimer = window.setTimeout(() => {
+        if (pendingVolumePercent === null) return;
+        showMessageIsland({
+            appName: '系统音量',
+            title: `当前音量 ${pendingVolumePercent}%`,
+            iconName: 'system',
+            durationMs: 2600,
+        }).catch(console.error);
+        pendingVolumePercent = null;
+        volumeNotifyTimer = null;
+    }, 800);
+};
+
+const syncSystemStatusEvents = async () => {
+    const status = await invoke<SystemStatusPayload>('fetch_system_status');
+    const previous = lastSystemStatus;
+    lastSystemStatus = status;
+    if (!previous) return;
+
+    if (status.hasBattery) {
+        const percentText = status.batteryPercent != null ? `，电量 ${status.batteryPercent}%` : '';
+        if (!previous.isCharging && status.isCharging) {
+            await showMessageIsland({
+                appName: '电源已接入',
+                title: `笔记本正在充电${percentText}`,
+                iconName: 'system',
+            });
+        } else if (!previous.isOnBattery && status.isOnBattery) {
+            await showMessageIsland({
+                appName: '正在使用电池',
+                title: `已切换为电池供电${percentText}`,
+                iconName: 'system',
+            });
+        }
+    }
+
+    const currentVolume = typeof status.volumePercent === 'number' ? Math.round(status.volumePercent) : null;
+    const previousVolume = typeof previous.volumePercent === 'number' ? Math.round(previous.volumePercent) : null;
+    if (currentVolume !== null && previousVolume !== null && Math.abs(currentVolume - previousVolume) >= 1) {
+        scheduleVolumeMessage(currentVolume);
+    }
 };
 
 onMounted(async () => {
@@ -2396,6 +2488,7 @@ onMounted(async () => {
         const enabled = localStorage.getItem('nsd_msg_notify') !== 'false';
         if (enabled) {
             try {
+                await syncSystemStatusEvents();
                 // 注意这里类型变了，接收任意对象
                 const res = await invoke<any>('fetch_latest_notification');
                 if (res) {
@@ -2480,6 +2573,7 @@ onUnmounted(() => {
     if (lyricTimer !== null) clearInterval(lyricTimer);
     if (pingTimer !== null) clearInterval(pingTimer);
     if (visibilityGuardTimer !== null) clearInterval(visibilityGuardTimer);
+    if (volumeNotifyTimer !== null) clearTimeout(volumeNotifyTimer);
     if (paletteTransitionFrame !== null) cancelAnimationFrame(paletteTransitionFrame);
     if (titleMeasureFrame !== null) cancelAnimationFrame(titleMeasureFrame);
     if (lyricMeasureFrame !== null) cancelAnimationFrame(lyricMeasureFrame);

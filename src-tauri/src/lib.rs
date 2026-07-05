@@ -32,8 +32,9 @@ use windows::Win32::Media::Audio::{
     eMultimedia, eRender, AudioSessionStateActive, IAudioSessionControl2, IAudioSessionManager2,
     IMMDeviceEnumerator, MMDeviceEnumerator, 
 };
-use windows::Win32::Media::Audio::Endpoints::IAudioMeterInformation;
+use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioMeterInformation};
 use windows::Win32::System::Com::{CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 use windows::Media::Control::{
     GlobalSystemMediaTransportControlsSession,
     GlobalSystemMediaTransportControlsSessionMediaProperties,
@@ -130,6 +131,16 @@ pub struct ReleaseInfo {
     pub name: String,
     pub html_url: String,
     pub source: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemStatusData {
+    pub has_battery: bool,
+    pub is_charging: bool,
+    pub is_on_battery: bool,
+    pub battery_percent: Option<u8>,
+    pub volume_percent: Option<u8>,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -3771,6 +3782,53 @@ fn get_network_latency() -> Result<u128, String> {
     }
 }
 
+fn read_power_status() -> Option<(bool, bool, bool, Option<u8>)> {
+    let mut status: SYSTEM_POWER_STATUS = unsafe { std::mem::zeroed() };
+    let ok = unsafe { GetSystemPowerStatus(&mut status as *mut SYSTEM_POWER_STATUS) };
+    if ok == 0 {
+        return None;
+    }
+
+    let has_battery = status.BatteryFlag != 128 && status.BatteryFlag != 255;
+    let is_on_battery = status.ACLineStatus == 0;
+    let is_charging = has_battery && status.ACLineStatus == 1;
+    let battery_percent = if has_battery && status.BatteryLifePercent <= 100 {
+        Some(status.BatteryLifePercent)
+    } else {
+        None
+    };
+
+    Some((has_battery, is_charging, is_on_battery, battery_percent))
+}
+
+unsafe fn read_master_volume_percent() -> Option<u8> {
+    let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+
+    let enumerator: IMMDeviceEnumerator = windows::Win32::System::Com::CoCreateInstance(
+        &MMDeviceEnumerator, None, CLSCTX_ALL,
+    ).ok()?;
+    let device = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia).ok()?;
+    let endpoint: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None).ok()?;
+    let scalar = endpoint.GetMasterVolumeLevelScalar().ok()?;
+    let percent = (scalar.clamp(0.0, 1.0) * 100.0).round() as u8;
+    Some(percent)
+}
+
+#[tauri::command]
+fn fetch_system_status() -> Result<SystemStatusData, String> {
+    let (has_battery, is_charging, is_on_battery, battery_percent) =
+        read_power_status().unwrap_or((false, false, false, None));
+    let volume_percent = unsafe { read_master_volume_percent() };
+
+    Ok(SystemStatusData {
+        has_battery,
+        is_charging,
+        is_on_battery,
+        battery_percent,
+        volume_percent,
+    })
+}
+
 fn extract_release_tag_from_url(url: &str) -> Option<String> {
     let marker = "/releases/tag/";
     let tag = url.split(marker).nth(1)?;
@@ -3917,6 +3975,7 @@ pub fn run() {
             is_widget_visible,
             get_network_latency,
             fetch_latest_release_info,
+            fetch_system_status,
             fetch_music_info,
             fetch_netease_music_info,
             control_system_media,
