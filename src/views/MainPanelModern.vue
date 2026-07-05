@@ -433,6 +433,31 @@ const parseVersion = (value: string) => {
     return match ? match[0].split('.').map(Number) : [0, 0, 0];
 };
 
+const compareVersions = (remote: number[], local: number[]) => {
+    for (let index = 0; index < Math.max(remote.length, local.length); index += 1) {
+        const remotePart = remote[index] || 0;
+        const localPart = local[index] || 0;
+        if (remotePart > localPart) return 1;
+        if (remotePart < localPart) return -1;
+    }
+    return 0;
+};
+
+const getUpdateErrorMessage = (status: number, detail: string, resetAt: string | null) => {
+    const isRateLimited = status === 403 && /rate limit/i.test(detail);
+    if (isRateLimited) {
+        const retryText = resetAt ? `，大约 ${resetAt} 后再试` : '，请稍后再试';
+        return `GitHub 临时限制了未登录检查更新的访问频率${retryText}。`;
+    }
+    if (status === 404) {
+        return '没有找到公开的更新源。请确认 GitHub 仓库已设为 Public，并且已经发布 Release。';
+    }
+    if (status === 403) {
+        return 'GitHub 拒绝了本次访问。请确认仓库已公开，或稍后再试。';
+    }
+    return `更新源返回异常状态：HTTP ${status}。`;
+};
+
 const checkUpdate = async () => {
     if (isChecking.value) return;
     isChecking.value = true;
@@ -440,15 +465,26 @@ const checkUpdate = async () => {
         const response = await fetch('https://api.github.com/repos/CHmua/FlowIsland/releases/latest', {
             headers: { Accept: 'application/vnd.github+json' },
         });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+            let detail = '';
+            try {
+                const errorData = await response.json();
+                detail = errorData?.message || '';
+            } catch { /* ignore */ }
+            const resetHeader = response.headers.get('x-ratelimit-reset');
+            const resetAt = resetHeader
+                ? new Date(Number(resetHeader) * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+                : null;
+            throw new Error(getUpdateErrorMessage(response.status, detail, resetAt));
+        }
         const data = await response.json();
         const local = parseVersion(appVersion.value);
         const remote = parseVersion(data.tag_name || data.name || '');
-        const hasUpdate = remote.some((num, index) => num > (local[index] || 0));
+        const hasUpdate = compareVersions(remote, local) > 0;
         hasNewVersion.value = hasUpdate;
         showDialog(hasUpdate ? '发现新版本' : '已是最新版本', hasUpdate ? `检测到新版本 ${data.tag_name}` : '当前已经是最新版本。');
     } catch (error) {
-        showDialog('检查失败', '无法检查更新，请稍后再试。');
+        showDialog('检查失败', error instanceof Error ? error.message : '无法检查更新，请稍后再试。');
     } finally {
         isChecking.value = false;
     }
