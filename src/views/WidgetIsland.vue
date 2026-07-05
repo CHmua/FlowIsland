@@ -277,6 +277,7 @@
                         <circle cx="19" cy="12" r="1.7" />
                     </svg>
                 </button>
+                <div v-else-if="isMsgActive" class="msg-status-dot"></div>
                 <div v-else-if="!isHardwarePrimary && !isDefaultSpeedPrimary" :class="['status-dot', networkStatus]">
                 </div>
             </div>
@@ -1507,8 +1508,7 @@ const isSplitActivity = computed(() => false);
 const isDefaultSpeedPrimary = computed(() => false);
 const showFlowBorder = computed(() =>
     isGlowBorderEnabled.value
-    && !isMsgActive.value
-    && isMusicPrimary.value
+    && (isMsgActive.value || isMusicPrimary.value)
 );
 const showHardwareBackdropGlow = computed(() =>
     false
@@ -2085,6 +2085,8 @@ const onInnerLeave = (el: Element, done: () => void) => {
 
 const COMPACT_WIDTH = 300;
 const COMPACT_HEIGHT = 42;
+const MESSAGE_WIDTH = 330;
+const MESSAGE_HEIGHT = COMPACT_HEIGHT;
 const DEFAULT_DASHBOARD_WIDTH = 820;
 const HARDWARE_WIDTH = 910;
 const SPLIT_ACTIVITY_WIDTH = 970;
@@ -2419,7 +2421,7 @@ onMounted(async () => {
 
                         // 👇 拦截：如果没有锁定在任务栏，才允许灵动岛变大
                         if (!isPinnedToTaskbar.value) {
-                            animateIslandSize(360, 65);
+                            animateIslandSize(MESSAGE_WIDTH, MESSAGE_HEIGHT);
                         }
                     }
 
@@ -3532,38 +3534,42 @@ onUnmounted(() => {
     position: absolute;
     left: 0;
     top: 0;
+    right: 0;
     width: 100%;
     height: 100%;
     display: flex;
     align-items: center;
-    padding: 0 45px 0 0px;
+    padding: 0 4px 0 0;
     /* 右侧 45px 留给状态灯安全区域，左侧 16px 间距 */
     box-sizing: border-box;
     z-index: 10;
-    gap: 12px;
+    gap: 8px;
     /* 图标与文本的间距 */
     -webkit-app-region: no-drag;
 }
 
 /* 预制消息图标/头像样式 */
 .msg-avatar {
-    width: 35px;
-    height: 35px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     /* 默认圆形，可改为 8px 变成圆角矩形 */
-    background: none;
+    border: 2px solid rgba(255, 255, 255, 0.5) !important;
+    background: linear-gradient(135deg, rgba(168, 237, 234, 0.9), rgba(254, 214, 227, 0.9));
     /* 渐变亮色背景 */
     display: flex;
     align-items: center;
     justify-content: center;
     color: #ffffff;
     flex-shrink: 0;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    overflow: hidden;
+    box-shadow: 0 0 10px rgba(255, 255, 255, 0.22);
+    transform: translateX(-5px);
 }
 
 .msg-avatar-img {
-    width: 30px;
-    height: 30px;
+    width: 100%;
+    height: 100%;
     border-radius: 50%;
     object-fit: cover;
 }
@@ -3577,14 +3583,16 @@ onUnmounted(() => {
     /* 核心：强制内部文本左对齐 */
     overflow: hidden;
     flex-grow: 1;
+    min-width: 0;
+    gap: 1px;
 }
 
 /* 调大后的标题样式 */
 .msg-title {
-    font-size: 14px;
+    font-size: 12px;
     /* 从 12px 放大到 14px */
     font-weight: 700;
-    line-height: 1.4;
+    line-height: 14px;
     opacity: 0.95;
     text-align: left;
     width: 100%;
@@ -3595,10 +3603,11 @@ onUnmounted(() => {
 
 /* 调大后的内容样式 */
 .msg-body {
-    font-size: 12.5px;
+    font-size: 10.5px;
     /* 从 11px 放大到 12.5px */
-    line-height: 1.4;
-    opacity: 0.75;
+    line-height: 12px;
+    font-weight: 650;
+    opacity: 0.82;
     text-align: left;
     width: 100%;
     overflow: hidden;
@@ -3608,6 +3617,29 @@ onUnmounted(() => {
 
 
 /* 系统硬件盒子样式 */
+.msg-status-dot {
+    width: 6px;
+    height: 6px;
+    flex: 0 0 6px;
+    border-radius: 50%;
+    background: #34c759;
+    box-shadow: 0 0 8px rgba(52, 199, 89, 0.5);
+    animation: msg-status-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes msg-status-pulse {
+    0%,
+    100% {
+        opacity: 0.7;
+        transform: scale(0.92);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.08);
+    }
+}
+
 .systemstate-box {
     position: absolute;
     left: 0;
