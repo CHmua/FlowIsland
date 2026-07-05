@@ -1606,6 +1606,7 @@ let speedTimer: number;
 let lyricTimer: number | null = null;
 let pingTimer: number | null = null;
 let visibilityGuardTimer: number | null = null;
+let systemStatusTimer: number | null = null;
 let fpsRafId: number | null = null;
 let fpsSampleStart = 0;
 let fpsFrameCount = 0;
@@ -2306,7 +2307,7 @@ const scheduleVolumeMessage = (percent: number) => {
         }).catch(console.error);
         pendingVolumePercent = null;
         volumeNotifyTimer = null;
-    }, 800);
+    }, 80);
 };
 
 const syncSystemStatusEvents = async () => {
@@ -2462,6 +2463,15 @@ onMounted(async () => {
         await syncHardwareStats();
     }
 
+    if (localStorage.getItem('nsd_msg_notify') !== 'false') {
+        await syncSystemStatusEvents().catch(console.error);
+    }
+    systemStatusTimer = window.setInterval(() => {
+        if (localStorage.getItem('nsd_msg_notify') !== 'false') {
+            syncSystemStatusEvents().catch(console.error);
+        }
+    }, 200);
+
     // 在你原有的每秒刷新定时器中，顺带执行音乐同步
     speedTimer = setInterval(async () => {
         // Windows 任务栏/显示桌面有时会改透明置顶窗口的层级，这里温和拉回。
@@ -2488,7 +2498,6 @@ onMounted(async () => {
         const enabled = localStorage.getItem('nsd_msg_notify') !== 'false';
         if (enabled) {
             try {
-                await syncSystemStatusEvents();
                 // 注意这里类型变了，接收任意对象
                 const res = await invoke<any>('fetch_latest_notification');
                 if (res) {
@@ -2573,6 +2582,7 @@ onUnmounted(() => {
     if (lyricTimer !== null) clearInterval(lyricTimer);
     if (pingTimer !== null) clearInterval(pingTimer);
     if (visibilityGuardTimer !== null) clearInterval(visibilityGuardTimer);
+    if (systemStatusTimer !== null) clearInterval(systemStatusTimer);
     if (volumeNotifyTimer !== null) clearTimeout(volumeNotifyTimer);
     if (paletteTransitionFrame !== null) cancelAnimationFrame(paletteTransitionFrame);
     if (titleMeasureFrame !== null) cancelAnimationFrame(titleMeasureFrame);

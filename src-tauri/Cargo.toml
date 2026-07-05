@@ -1,8 +1,8 @@
 [package]
 name = "flow-island"
-version = "2.3.9"
-description = "A Tauri App"
-authors = ["you"]
+version = "2.3.10"
+description = "FlowIsland desktop dynamic island companion"
+authors = ["CHmua"]
 edition = "2021"
 
 [lib]

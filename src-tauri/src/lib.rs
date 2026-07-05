@@ -52,6 +52,46 @@ static TASKBAR_NOTIFY_STATE: OnceLock<Mutex<TaskbarNotifyState>> = OnceLock::new
 // 👈 新增：记录应用最后一次发出声音的绝对时间
 static LAST_AUDIO_TIME: Mutex<Option<Instant>> = Mutex::new(None); 
 
+#[cfg(target_os = "windows")]
+fn cleanup_legacy_shortcuts() {
+    let legacy_shortcuts = [
+        "NetSpeed Dynamic Pro.lnk",
+        "NetSpeed Dynamic.lnk",
+        "NSD.lnk",
+    ];
+    let legacy_folders = [
+        "NetSpeed Dynamic Pro",
+        "NetSpeed Dynamic",
+        "NSD",
+    ];
+
+    let mut roots = Vec::new();
+    if let Some(appdata) = env::var_os("APPDATA") {
+        roots.push(PathBuf::from(appdata).join("Microsoft\\Windows\\Start Menu\\Programs"));
+    }
+    if let Some(program_data) = env::var_os("ProgramData") {
+        roots.push(PathBuf::from(program_data).join("Microsoft\\Windows\\Start Menu\\Programs"));
+    }
+    if let Some(profile) = env::var_os("USERPROFILE") {
+        roots.push(PathBuf::from(profile).join("Desktop"));
+    }
+    if let Some(public) = env::var_os("PUBLIC") {
+        roots.push(PathBuf::from(public).join("Desktop"));
+    }
+
+    for root in roots {
+        for shortcut in legacy_shortcuts {
+            let _ = std::fs::remove_file(root.join(shortcut));
+        }
+        for folder in legacy_folders {
+            let _ = std::fs::remove_dir_all(root.join(folder));
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cleanup_legacy_shortcuts() {}
+
 #[derive(serde::Serialize, Clone)]
 pub struct ToastData {
     pub app_name: String,
@@ -4032,6 +4072,8 @@ pub fn run() {
             set_window_bounds,
         ])
         .setup(|app| {
+            cleanup_legacy_shortcuts();
+
             let mut hardware_monitor_roots = Vec::new();
             if let Ok(resource_dir) = app.path().resource_dir() {
                 hardware_monitor_roots.push(resource_dir);

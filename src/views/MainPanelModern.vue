@@ -36,7 +36,6 @@
                     <span>{{ isChecking ? '检查中' : (hasNewVersion ? '发现新版本' : '检查更新') }}</span>
                     <i v-if="hasNewVersion"></i>
                 </button>
-                <p>&copy; 2026 Ryen. All rights reserved.</p>
             </div>
         </aside>
 
@@ -82,7 +81,7 @@
                             <SettingRow :icon="Bell" title="消息通知接收" desc="启用系统控制中心消息弹窗提醒">
                                 <ToggleSwitch v-model="enableMsgNotify" @change="toggleMsgNotify" />
                             </SettingRow>
-                            <SettingRow :icon="PanelBottom" title="置于任务栏" desc="将灵动岛锁定至任务栏左下角" badge="♛">
+                            <SettingRow :icon="PanelBottom" title="置于任务栏" desc="将灵动岛锁定至任务栏左下角">
                                 <ToggleSwitch v-model="pinToTaskbar" @change="togglePinTaskbar" />
                             </SettingRow>
                         </SettingGroup>
@@ -143,7 +142,6 @@
                             </button>
                         </SettingRow>
                     </SettingGroup>
-                    <InfoCard title="项目" text="由 Ryen 开发维护，专注于桌面灵动岛体验。" />
                 </section>
             </div>
         </main>
