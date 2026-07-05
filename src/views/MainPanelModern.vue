@@ -433,6 +433,28 @@ const parseVersion = (value: string) => {
     return match ? match[0].split('.').map(Number) : [0, 0, 0];
 };
 
+type UpdateReleaseInfo = {
+    tagName?: string;
+    tag_name?: string;
+    name?: string;
+    htmlUrl?: string;
+    html_url?: string;
+    source?: string;
+    fetchedAt?: number;
+};
+
+type NormalizedReleaseInfo = {
+    tagName: string;
+    name: string;
+    htmlUrl: string;
+    source: string;
+    fetchedAt: number;
+};
+
+const UPDATE_CACHE_KEY = 'flowisland_update_cache_v1';
+const UPDATE_CACHE_TTL_MS = 5 * 60 * 1000;
+const UPDATE_FALLBACK_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
 const compareVersions = (remote: number[], local: number[]) => {
     for (let index = 0; index < Math.max(remote.length, local.length); index += 1) {
         const remotePart = remote[index] || 0;
@@ -443,48 +465,78 @@ const compareVersions = (remote: number[], local: number[]) => {
     return 0;
 };
 
-const getUpdateErrorMessage = (status: number, detail: string, resetAt: string | null) => {
-    const isRateLimited = status === 403 && /rate limit/i.test(detail);
-    if (isRateLimited) {
-        const retryText = resetAt ? `，大约 ${resetAt} 后再试` : '，请稍后再试';
-        return `GitHub 临时限制了未登录检查更新的访问频率${retryText}。`;
+const normalizeReleaseInfo = (raw: UpdateReleaseInfo | null | undefined): NormalizedReleaseInfo | null => {
+    if (!raw) return null;
+    const tagName = raw.tagName || raw.tag_name || raw.name || '';
+    if (!tagName.trim()) return null;
+    return {
+        tagName,
+        name: raw.name || tagName,
+        htmlUrl: raw.htmlUrl || raw.html_url || 'https://github.com/CHmua/FlowIsland/releases/latest',
+        source: raw.source || 'unknown',
+        fetchedAt: raw.fetchedAt || Date.now(),
+    };
+};
+
+const readCachedReleaseInfo = (maxAgeMs: number) => {
+    try {
+        const cached = normalizeReleaseInfo(JSON.parse(localStorage.getItem(UPDATE_CACHE_KEY) || 'null'));
+        if (!cached) return null;
+        return Date.now() - cached.fetchedAt <= maxAgeMs ? cached : null;
+    } catch {
+        return null;
     }
-    if (status === 404) {
-        return '没有找到公开的更新源。请确认 GitHub 仓库已设为 Public，并且已经发布 Release。';
-    }
-    if (status === 403) {
-        return 'GitHub 拒绝了本次访问。请确认仓库已公开，或稍后再试。';
-    }
-    return `更新源返回异常状态：HTTP ${status}。`;
+};
+
+const writeCachedReleaseInfo = (release: NormalizedReleaseInfo) => {
+    localStorage.setItem(UPDATE_CACHE_KEY, JSON.stringify({ ...release, fetchedAt: Date.now() }));
+};
+
+const formatCacheAge = (fetchedAt: number) => {
+    const minutes = Math.max(0, Math.round((Date.now() - fetchedAt) / 60000));
+    if (minutes <= 0) return '刚刚';
+    if (minutes < 60) return `${minutes} 分钟前`;
+    return `${Math.round(minutes / 60)} 小时前`;
+};
+
+const showUpdateResult = (release: NormalizedReleaseInfo, fromCache = false, prefix = '') => {
+    const local = parseVersion(appVersion.value);
+    const remote = parseVersion(release.tagName || release.name || '');
+    const hasUpdate = compareVersions(remote, local) > 0;
+    hasNewVersion.value = hasUpdate;
+    const cacheText = fromCache ? `\n\n结果来自 ${formatCacheAge(release.fetchedAt)} 的本地缓存。` : '';
+    const sourceText = release.source === 'github-page' ? '\n\n已使用 GitHub Releases 页面兜底检查。' : '';
+    showDialog(
+        hasUpdate ? '发现新版本' : '已是最新版本',
+        `${prefix}${hasUpdate ? `检测到新版本 ${release.tagName}` : '当前已经是最新版本。'}${sourceText}${cacheText}`
+    );
 };
 
 const checkUpdate = async () => {
     if (isChecking.value) return;
+    const freshCache = readCachedReleaseInfo(UPDATE_CACHE_TTL_MS);
+    if (freshCache) {
+        showUpdateResult(freshCache, true);
+        return;
+    }
+
     isChecking.value = true;
     try {
-        const response = await fetch('https://api.github.com/repos/CHmua/FlowIsland/releases/latest', {
-            headers: { Accept: 'application/vnd.github+json' },
-        });
-        if (!response.ok) {
-            let detail = '';
-            try {
-                const errorData = await response.json();
-                detail = errorData?.message || '';
-            } catch { /* ignore */ }
-            const resetHeader = response.headers.get('x-ratelimit-reset');
-            const resetAt = resetHeader
-                ? new Date(Number(resetHeader) * 1000).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-                : null;
-            throw new Error(getUpdateErrorMessage(response.status, detail, resetAt));
-        }
-        const data = await response.json();
-        const local = parseVersion(appVersion.value);
-        const remote = parseVersion(data.tag_name || data.name || '');
-        const hasUpdate = compareVersions(remote, local) > 0;
-        hasNewVersion.value = hasUpdate;
-        showDialog(hasUpdate ? '发现新版本' : '已是最新版本', hasUpdate ? `检测到新版本 ${data.tag_name}` : '当前已经是最新版本。');
+        const release = normalizeReleaseInfo(await invoke<UpdateReleaseInfo>('fetch_latest_release_info'));
+        if (!release) throw new Error('更新源没有返回有效版本号。');
+        writeCachedReleaseInfo(release);
+        showUpdateResult(release);
     } catch (error) {
-        showDialog('检查失败', error instanceof Error ? error.message : '无法检查更新，请稍后再试。');
+        const fallbackCache = readCachedReleaseInfo(UPDATE_FALLBACK_CACHE_TTL_MS);
+        if (fallbackCache) {
+            showUpdateResult(
+                fallbackCache,
+                true,
+                '暂时无法连接 GitHub，已使用最近一次缓存结果。\n\n'
+            );
+        } else {
+            showDialog('检查失败', error instanceof Error ? error.message : '无法检查更新，请稍后再试。');
+        }
     } finally {
         isChecking.value = false;
     }

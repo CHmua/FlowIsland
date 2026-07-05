@@ -123,6 +123,15 @@ pub struct HardwareStats {
     pub gpu_temperature: Option<f32>,
 }
 
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ReleaseInfo {
+    pub tag_name: String,
+    pub name: String,
+    pub html_url: String,
+    pub source: String,
+}
+
 #[derive(Clone, Copy, Default)]
 struct HardwareAuxStats {
     cpu_temperature: Option<f32>,
@@ -3762,6 +3771,123 @@ fn get_network_latency() -> Result<u128, String> {
     }
 }
 
+fn extract_release_tag_from_url(url: &str) -> Option<String> {
+    let marker = "/releases/tag/";
+    let tag = url.split(marker).nth(1)?;
+    let tag = tag.split(&['?', '#'][..]).next().unwrap_or(tag).trim();
+    if tag.is_empty() {
+        None
+    } else {
+        Some(tag.to_string())
+    }
+}
+
+fn github_rate_limit_reset_text(headers: &reqwest::header::HeaderMap) -> Option<String> {
+    let reset = headers
+        .get("x-ratelimit-reset")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    let wait_minutes = reset.saturating_sub(now).div_ceil(60);
+    if wait_minutes == 0 {
+        Some("稍后".to_string())
+    } else {
+        Some(format!("约 {} 分钟后", wait_minutes))
+    }
+}
+
+async fn fetch_release_from_github_latest_page(client: &reqwest::Client) -> Result<ReleaseInfo, String> {
+    let response = client
+        .get("https://github.com/CHmua/FlowIsland/releases/latest")
+        .send()
+        .await
+        .map_err(|err| format!("无法访问 GitHub Releases 页面：{}", err))?;
+
+    let final_url = response.url().to_string();
+    if !response.status().is_success() {
+        return Err(format!("GitHub Releases 页面返回 HTTP {}", response.status().as_u16()));
+    }
+
+    let tag_name = extract_release_tag_from_url(&final_url)
+        .ok_or_else(|| "没有从 GitHub Releases 页面解析到最新版本号".to_string())?;
+
+    Ok(ReleaseInfo {
+        name: tag_name.trim_start_matches('v').to_string(),
+        html_url: final_url,
+        tag_name,
+        source: "github-page".to_string(),
+    })
+}
+
+#[tauri::command]
+async fn fetch_latest_release_info() -> Result<ReleaseInfo, String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .user_agent(format!("FlowIsland/{}", env!("CARGO_PKG_VERSION")))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .map_err(|err| format!("创建更新检查客户端失败：{}", err))?;
+
+    let api_response = client
+        .get("https://api.github.com/repos/CHmua/FlowIsland/releases/latest")
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await;
+
+    match api_response {
+        Ok(response) if response.status().is_success() => {
+            let data = response
+                .json::<serde_json::Value>()
+                .await
+                .map_err(|err| format!("解析更新信息失败：{}", err))?;
+            let tag_name = data
+                .get("tag_name")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+                .to_string();
+            if tag_name.trim().is_empty() {
+                return Err("GitHub Release 没有版本号。".to_string());
+            }
+            Ok(ReleaseInfo {
+                name: data
+                    .get("name")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or(&tag_name)
+                    .to_string(),
+                html_url: data
+                    .get("html_url")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("https://github.com/CHmua/FlowIsland/releases/latest")
+                    .to_string(),
+                tag_name,
+                source: "github-api".to_string(),
+            })
+        }
+        Ok(response) => {
+            let status = response.status().as_u16();
+            let reset_text = github_rate_limit_reset_text(response.headers());
+            let detail = response.text().await.unwrap_or_default();
+
+            if let Ok(release) = fetch_release_from_github_latest_page(&client).await {
+                return Ok(release);
+            }
+
+            if status == 403 && detail.to_lowercase().contains("rate limit") {
+                let retry_text = reset_text.unwrap_or_else(|| "稍后".to_string());
+                return Err(format!("GitHub 临时限制了未登录检查更新的访问频率，请{}再试。", retry_text));
+            }
+            if status == 404 {
+                return Err("没有找到公开的更新源。请确认 GitHub 仓库已设为 Public，并且已经发布 Release。".to_string());
+            }
+            Err(format!("更新源返回异常状态：HTTP {}。", status))
+        }
+        Err(err) => match fetch_release_from_github_latest_page(&client).await {
+            Ok(release) => Ok(release),
+            Err(fallback_err) => Err(format!("无法连接更新源：{}；兜底检查也失败：{}", err, fallback_err)),
+        },
+    }
+}
+
 #[tauri::command]
 fn is_widget_visible(app: tauri::AppHandle) -> bool {
     match app.get_webview_window("widget") {
@@ -3790,6 +3916,7 @@ pub fn run() {
             get_network_stats,
             is_widget_visible,
             get_network_latency,
+            fetch_latest_release_info,
             fetch_music_info,
             fetch_netease_music_info,
             control_system_media,
