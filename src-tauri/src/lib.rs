@@ -1,56 +1,56 @@
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
 use std::env;
-use tauri::{State, Manager};
-use sysinfo::{Networks, System};
 use std::net::{SocketAddr, TcpStream};
-use std::process::{Command, Output, Stdio};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tauri_plugin_autostart::MacosLauncher;
-use tauri::menu::{Menu, MenuItem};
-use tauri::tray::{TrayIconBuilder, TrayIconEvent, MouseButton};
-use tauri::{WebviewUrl, WebviewWindow, WebviewWindowBuilder};
-use std::sync::atomic::{AtomicU32, AtomicBool, Ordering};
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output, Stdio};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use sysinfo::{Networks, System};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
+use tauri::{Emitter, Manager, State};
+use tauri::{WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri_plugin_autostart::MacosLauncher;
 
 // --- WinAPI Imports ---
-use winapi::um::winuser::{
-    EnumWindows, GetClassNameW, GetWindowTextW, GetWindowThreadProcessId,
-    GetForegroundWindow, GetMonitorInfoW, GetWindowRect, IsWindowVisible, MonitorFromWindow,
-    SetForegroundWindow, ShowWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-    keybd_event, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK,
-    VK_MENU, KEYEVENTF_KEYUP, SW_HIDE, SW_SHOWNORMAL,
-};
-use winapi::shared::windef::{HWND, RECT};
-use winapi::shared::minwindef::{BOOL, LPARAM, TRUE, FALSE};
 use std::os::windows::ffi::OsStrExt;
+use winapi::shared::minwindef::{BOOL, FALSE, LPARAM, TRUE};
+use winapi::shared::windef::{HWND, RECT};
 use winapi::um::shellapi::ShellExecuteW;
+use winapi::um::winuser::{
+    keybd_event, EnumWindows, GetClassNameW, GetForegroundWindow, GetMonitorInfoW, GetWindowRect,
+    GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, MonitorFromWindow,
+    SetForegroundWindow, ShowWindow, KEYEVENTF_KEYUP, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    SW_HIDE, SW_SHOWNORMAL, VK_MEDIA_NEXT_TRACK, VK_MEDIA_PLAY_PAUSE, VK_MEDIA_PREV_TRACK, VK_MENU,
+};
 
 // --- Windows Crate Imports ---
-use windows::Win32::Media::Audio::{
-    eMultimedia, eRender, AudioSessionStateActive, IAudioSessionControl2, IAudioSessionManager2,
-    IMMDeviceEnumerator, MMDeviceEnumerator, 
-};
-use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioMeterInformation};
-use windows::Win32::System::Com::{CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
-use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
+use base64::{engine::general_purpose, Engine as _};
+use sha2::{Digest, Sha256};
+use tokio::io::AsyncWriteExt;
+use windows::core::Interface;
+use windows::Foundation::TimeSpan;
 use windows::Media::Control::{
-    GlobalSystemMediaTransportControlsSession,
+    GlobalSystemMediaTransportControlsSession, GlobalSystemMediaTransportControlsSessionManager,
     GlobalSystemMediaTransportControlsSessionMediaProperties,
-    GlobalSystemMediaTransportControlsSessionManager,
     GlobalSystemMediaTransportControlsSessionPlaybackStatus,
 };
-use windows::Foundation::TimeSpan;
 use windows::Storage::Streams::{Buffer, DataReader, InputStreamOptions};
-use windows::core::Interface;
-use base64::{engine::general_purpose, Engine as _};
+use windows::Win32::Media::Audio::Endpoints::{IAudioEndpointVolume, IAudioMeterInformation};
+use windows::Win32::Media::Audio::{
+    eMultimedia, eRender, AudioSessionStateActive, IAudioSessionControl2, IAudioSessionManager2,
+    IMMDeviceEnumerator, MMDeviceEnumerator,
+};
+use windows::Win32::System::Com::{CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 
 static LAST_NOTIFICATION_ID: AtomicU32 = AtomicU32::new(0);
 static IS_NOTIF_INIT: AtomicBool = AtomicBool::new(false);
 static TASKBAR_NOTIFY_STATE: OnceLock<Mutex<TaskbarNotifyState>> = OnceLock::new();
 // 👈 新增：记录应用最后一次发出声音的绝对时间
-static LAST_AUDIO_TIME: Mutex<Option<Instant>> = Mutex::new(None); 
+static LAST_AUDIO_TIME: Mutex<Option<Instant>> = Mutex::new(None);
 
 #[cfg(target_os = "windows")]
 fn cleanup_legacy_shortcuts() {
@@ -59,11 +59,7 @@ fn cleanup_legacy_shortcuts() {
         "NetSpeed Dynamic.lnk",
         "NSD.lnk",
     ];
-    let legacy_folders = [
-        "NetSpeed Dynamic Pro",
-        "NetSpeed Dynamic",
-        "NSD",
-    ];
+    let legacy_folders = ["NetSpeed Dynamic Pro", "NetSpeed Dynamic", "NSD"];
 
     let mut roots = Vec::new();
     if let Some(appdata) = env::var_os("APPDATA") {
@@ -171,7 +167,24 @@ pub struct ReleaseInfo {
     pub name: String,
     pub html_url: String,
     pub download_url: Option<String>,
+    pub asset_digest: Option<String>,
+    pub asset_size: Option<u64>,
     pub source: String,
+}
+
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateDownloadProgress {
+    pub status: String,
+    pub downloaded: u64,
+    pub total: Option<u64>,
+    pub percent: u8,
+}
+
+struct ReleaseAsset {
+    download_url: String,
+    digest: Option<String>,
+    size: Option<u64>,
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -288,23 +301,38 @@ fn ensure_widget_window(app: &tauri::App) -> tauri::Result<WebviewWindow> {
 fn apply_widget_window_style(widget_window: &WebviewWindow) {
     #[cfg(target_os = "windows")]
     {
-        use windows_sys::Win32::Graphics::Dwm::{
-            DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWA_BORDER_COLOR, DWMWCP_DONOTROUND,
-        };
-        use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowLongPtrW, GWL_STYLE, WS_CAPTION};
         use windows_sys::Win32::Foundation::HWND;
+        use windows_sys::Win32::Graphics::Dwm::{
+            DwmSetWindowAttribute, DWMWA_BORDER_COLOR, DWMWA_WINDOW_CORNER_PREFERENCE,
+            DWMWCP_DONOTROUND,
+        };
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            SetWindowLongPtrW, GWL_STYLE, WS_CAPTION,
+        };
 
         if let Ok(hwnd) = widget_window.hwnd() {
             let hwnd_raw = hwnd.0 as HWND;
             unsafe {
-                let current_style = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(hwnd_raw, GWL_STYLE);
+                let current_style = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowLongPtrW(
+                    hwnd_raw, GWL_STYLE,
+                );
                 SetWindowLongPtrW(hwnd_raw, GWL_STYLE, current_style & !(WS_CAPTION as isize));
 
                 let border_color: u32 = 0xFFFFFFFE;
-                let _ = DwmSetWindowAttribute(hwnd_raw, DWMWA_BORDER_COLOR as u32, &border_color as *const _ as *const _, 4);
+                let _ = DwmSetWindowAttribute(
+                    hwnd_raw,
+                    DWMWA_BORDER_COLOR as u32,
+                    &border_color as *const _ as *const _,
+                    4,
+                );
 
                 let corner_preference = DWMWCP_DONOTROUND;
-                let _ = DwmSetWindowAttribute(hwnd_raw, DWMWA_WINDOW_CORNER_PREFERENCE as u32, &corner_preference as *const _ as *const _, 4);
+                let _ = DwmSetWindowAttribute(
+                    hwnd_raw,
+                    DWMWA_WINDOW_CORNER_PREFERENCE as u32,
+                    &corner_preference as *const _ as *const _,
+                    4,
+                );
             }
         }
     }
@@ -335,7 +363,12 @@ fn collect_monitor_library_candidates(extra_roots: &[PathBuf]) -> Vec<PathBuf> {
         roots.push(current_dir.join("src-tauri").join("resources"));
     }
 
-    for var in ["ProgramFiles", "ProgramFiles(x86)", "LocalAppData", "ProgramData"] {
+    for var in [
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "LocalAppData",
+        "ProgramData",
+    ] {
         if let Some(base) = env::var_os(var).map(PathBuf::from) {
             roots.push(base);
         }
@@ -343,16 +376,29 @@ fn collect_monitor_library_candidates(extra_roots: &[PathBuf]) -> Vec<PathBuf> {
 
     for root in roots {
         candidates.extend([
-            root.join("tools").join("OpenHardwareMonitor").join("OpenHardwareMonitorLib.dll"),
-            root.join("OpenHardwareMonitor").join("OpenHardwareMonitorLib.dll"),
-            root.join("Programs").join("OpenHardwareMonitor").join("OpenHardwareMonitorLib.dll"),
-            root.join("tools").join("LibreHardwareMonitor").join("LibreHardwareMonitorLib.dll"),
-            root.join("LibreHardwareMonitor").join("LibreHardwareMonitorLib.dll"),
-            root.join("Programs").join("LibreHardwareMonitor").join("LibreHardwareMonitorLib.dll"),
+            root.join("tools")
+                .join("OpenHardwareMonitor")
+                .join("OpenHardwareMonitorLib.dll"),
+            root.join("OpenHardwareMonitor")
+                .join("OpenHardwareMonitorLib.dll"),
+            root.join("Programs")
+                .join("OpenHardwareMonitor")
+                .join("OpenHardwareMonitorLib.dll"),
+            root.join("tools")
+                .join("LibreHardwareMonitor")
+                .join("LibreHardwareMonitorLib.dll"),
+            root.join("LibreHardwareMonitor")
+                .join("LibreHardwareMonitorLib.dll"),
+            root.join("Programs")
+                .join("LibreHardwareMonitor")
+                .join("LibreHardwareMonitorLib.dll"),
         ]);
     }
 
-    candidates.into_iter().filter(|path| path.is_file()).collect()
+    candidates
+        .into_iter()
+        .filter(|path| path.is_file())
+        .collect()
 }
 
 fn parse_optional_f32(value: &str) -> Option<f32> {
@@ -526,14 +572,7 @@ fn cpu_sensor_score(sensor: &TemperatureSensor) -> Option<(i32, f32)> {
     }
 
     let has_cpu_hint = [
-        "cpu",
-        "intelcpu",
-        "amdcpu",
-        "package",
-        "tctl",
-        "tdie",
-        "ccd",
-        "core",
+        "cpu", "intelcpu", "amdcpu", "package", "tctl", "tdie", "ccd", "core",
     ]
     .iter()
     .any(|needle| text.contains(needle));
@@ -567,9 +606,11 @@ fn select_cpu_temperature(sensors: &[TemperatureSensor]) -> Option<f32> {
         .iter()
         .filter_map(cpu_sensor_score)
         .max_by(|(left_score, left_value), (right_score, right_value)| {
-            left_score
-                .cmp(right_score)
-                .then_with(|| left_value.partial_cmp(right_value).unwrap_or(std::cmp::Ordering::Equal))
+            left_score.cmp(right_score).then_with(|| {
+                left_value
+                    .partial_cmp(right_value)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
         })
         .map(|(_, value)| value)
 }
@@ -637,7 +678,10 @@ fn select_gpu_temperature(sensors: &[TemperatureSensor]) -> Option<f32> {
         .iter()
         .filter_map(|sensor| {
             let value = sensor.value?;
-            if !sensor_type_is(sensor, "Temperature") || !is_reasonable_temperature(value) || !is_gpu_sensor(sensor) {
+            if !sensor_type_is(sensor, "Temperature")
+                || !is_reasonable_temperature(value)
+                || !is_gpu_sensor(sensor)
+            {
                 return None;
             }
 
@@ -654,7 +698,13 @@ fn select_gpu_temperature(sensors: &[TemperatureSensor]) -> Option<f32> {
             }
             Some((score, value))
         })
-        .max_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.partial_cmp(&right.1).unwrap_or(std::cmp::Ordering::Equal)))
+        .max_by(|left, right| {
+            left.0.cmp(&right.0).then_with(|| {
+                left.1
+                    .partial_cmp(&right.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        })
         .map(|(_, value)| value)
 }
 
@@ -677,7 +727,13 @@ fn select_gpu_usage(sensors: &[TemperatureSensor]) -> Option<f32> {
             }
             Some((score, value))
         })
-        .max_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.partial_cmp(&right.1).unwrap_or(std::cmp::Ordering::Equal)))
+        .max_by(|left, right| {
+            left.0.cmp(&right.0).then_with(|| {
+                left.1
+                    .partial_cmp(&right.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        })
         .map(|(_, value)| value)
 }
 
@@ -704,7 +760,13 @@ fn select_gpu_memory_usage(sensors: &[TemperatureSensor]) -> Option<f32> {
             }
             Some((score, value))
         })
-        .max_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.partial_cmp(&right.1).unwrap_or(std::cmp::Ordering::Equal)))
+        .max_by(|left, right| {
+            left.0.cmp(&right.0).then_with(|| {
+                left.1
+                    .partial_cmp(&right.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        })
         .map(|(_, value)| value)
 }
 
@@ -737,7 +799,9 @@ fn select_gpu_memory_mb_stats(sensors: &[TemperatureSensor]) -> (Option<u64>, Op
     let mut total_candidates: Vec<(i32, u64)> = Vec::new();
 
     for sensor in sensors {
-        if !is_gpu_sensor(sensor) || !(sensor_type_is(sensor, "Data") || sensor_type_is(sensor, "SmallData")) {
+        if !is_gpu_sensor(sensor)
+            || !(sensor_type_is(sensor, "Data") || sensor_type_is(sensor, "SmallData"))
+        {
             continue;
         }
 
@@ -782,7 +846,11 @@ fn select_fan_stats(sensors: &[TemperatureSensor]) -> (Option<u64>, Option<u64>,
             continue;
         };
 
-        let sensor_type = sensor.sensor_type.as_deref().unwrap_or_default().to_lowercase();
+        let sensor_type = sensor
+            .sensor_type
+            .as_deref()
+            .unwrap_or_default()
+            .to_lowercase();
         let text = sensor_text(sensor);
         let looks_like_fan = sensor_type == "fan"
             || sensor_type == "control"
@@ -793,7 +861,9 @@ fn select_fan_stats(sensors: &[TemperatureSensor]) -> (Option<u64>, Option<u64>,
         }
 
         let is_gpu = is_gpu_sensor(sensor);
-        let is_cpu = ["cpu", "processor"].iter().any(|needle| text.contains(needle));
+        let is_cpu = ["cpu", "processor"]
+            .iter()
+            .any(|needle| text.contains(needle));
 
         if sensor_type == "control" {
             if let Some(percent) = percent_value(value) {
@@ -821,7 +891,13 @@ fn select_fan_stats(sensors: &[TemperatureSensor]) -> (Option<u64>, Option<u64>,
 
     let cpu_fan_rpm = cpu_candidates
         .into_iter()
-        .max_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.partial_cmp(&right.1).unwrap_or(std::cmp::Ordering::Equal)))
+        .max_by(|left, right| {
+            left.0.cmp(&right.0).then_with(|| {
+                left.1
+                    .partial_cmp(&right.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        })
         .map(|(_, value)| value.round() as u64)
         .or_else(|| {
             fallback_candidates
@@ -832,12 +908,24 @@ fn select_fan_stats(sensors: &[TemperatureSensor]) -> (Option<u64>, Option<u64>,
 
     let gpu_fan_rpm = gpu_candidates
         .into_iter()
-        .max_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.partial_cmp(&right.1).unwrap_or(std::cmp::Ordering::Equal)))
+        .max_by(|left, right| {
+            left.0.cmp(&right.0).then_with(|| {
+                left.1
+                    .partial_cmp(&right.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        })
         .map(|(_, value)| value.round() as u64);
 
     let gpu_fan_speed_percent = gpu_percent_candidates
         .into_iter()
-        .max_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.partial_cmp(&right.1).unwrap_or(std::cmp::Ordering::Equal)))
+        .max_by(|left, right| {
+            left.0.cmp(&right.0).then_with(|| {
+                left.1
+                    .partial_cmp(&right.1)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+        })
         .map(|(_, value)| value);
 
     (cpu_fan_rpm, gpu_fan_rpm, gpu_fan_speed_percent)
@@ -857,7 +945,10 @@ fn query_hardware_aux_once(extra_roots: &[PathBuf]) -> HardwareAuxStats {
         .unwrap_or_default();
 
     if env::var_os("NSD_DISABLE_LOW_LEVEL_SENSORS").is_none() {
-        merge_aux_stats(&mut stats, query_hardware_aux_direct_lib(extra_roots).unwrap_or_default());
+        merge_aux_stats(
+            &mut stats,
+            query_hardware_aux_direct_lib(extra_roots).unwrap_or_default(),
+        );
     }
 
     merge_aux_stats(&mut stats, query_hardware_aux_wmi().unwrap_or_default());
@@ -1060,7 +1151,10 @@ try {{
     Some(aux_stats_from_sensors(&sensors))
 }
 
-fn query_hardware_aux_cached(cache: Arc<Mutex<HardwareSensorCache>>, extra_roots: Vec<PathBuf>) -> HardwareAuxStats {
+fn query_hardware_aux_cached(
+    cache: Arc<Mutex<HardwareSensorCache>>,
+    extra_roots: Vec<PathBuf>,
+) -> HardwareAuxStats {
     const HARDWARE_SENSOR_CACHE_TTL: Duration = Duration::from_secs(30);
     let now = Instant::now();
     let mut should_refresh = false;
@@ -1190,7 +1284,11 @@ fn text_match_quality(a: &str, b: &str) -> i64 {
     if left.contains(&right) || right.contains(&left) {
         let min_len = left.chars().count().min(right.chars().count()) as f64;
         let max_len = left.chars().count().max(right.chars().count()) as f64;
-        let ratio = if max_len > 0.0 { min_len / max_len } else { 0.0 };
+        let ratio = if max_len > 0.0 {
+            min_len / max_len
+        } else {
+            0.0
+        };
         return if ratio >= 0.78 {
             88
         } else if ratio >= 0.58 {
@@ -1238,9 +1336,25 @@ fn strip_lrclib_noise_segments(value: &str) -> String {
             if depth == 0 {
                 let normalized = segment.to_lowercase();
                 let is_noise = [
-                    "feat", "featuring", "ft.", "live", "remaster", "remastered", "version",
-                    "edit", "mix", "acoustic", "demo", "radio", "single", "explicit",
-                    "sped", "slowed", "nightcore", "karaoke", "instrumental",
+                    "feat",
+                    "featuring",
+                    "ft.",
+                    "live",
+                    "remaster",
+                    "remastered",
+                    "version",
+                    "edit",
+                    "mix",
+                    "acoustic",
+                    "demo",
+                    "radio",
+                    "single",
+                    "explicit",
+                    "sped",
+                    "slowed",
+                    "nightcore",
+                    "karaoke",
+                    "instrumental",
                 ]
                 .iter()
                 .any(|keyword| normalized.contains(keyword));
@@ -1272,13 +1386,27 @@ fn clean_lrclib_track_name(value: &str) -> String {
         .replace("—", "-")
         .replace("：", ":");
 
-    for marker in [" feat. ", " ft. ", " featuring ", " Feat. ", " Ft. ", " Featuring "] {
+    for marker in [
+        " feat. ",
+        " ft. ",
+        " featuring ",
+        " Feat. ",
+        " Ft. ",
+        " Featuring ",
+    ] {
         if let Some(index) = cleaned.find(marker) {
             cleaned.truncate(index);
         }
     }
 
-    for marker in [" - Live", " - live", " - Remaster", " - remaster", " - Radio Edit", " - radio edit"] {
+    for marker in [
+        " - Live",
+        " - live",
+        " - Remaster",
+        " - remaster",
+        " - Radio Edit",
+        " - radio edit",
+    ] {
         if let Some(index) = cleaned.find(marker) {
             cleaned.truncate(index);
         }
@@ -1297,7 +1425,14 @@ fn clean_lrclib_artist_name(value: &str) -> String {
     if let Some(index) = cleaned.find(',') {
         cleaned.truncate(index);
     }
-    for marker in [" feat. ", " ft. ", " featuring ", " Feat. ", " Ft. ", " Featuring "] {
+    for marker in [
+        " feat. ",
+        " ft. ",
+        " featuring ",
+        " Feat. ",
+        " Ft. ",
+        " Featuring ",
+    ] {
         if let Some(index) = cleaned.find(marker) {
             cleaned.truncate(index);
         }
@@ -1326,7 +1461,11 @@ fn lrclib_query_variants(song_name: &str, artist_name: &str) -> Vec<(String, Str
     let clean_artist = clean_lrclib_artist_name(artist_name);
     let mut variants = Vec::new();
 
-    push_lrclib_query_variant(&mut variants, song_name.to_string(), artist_name.to_string());
+    push_lrclib_query_variant(
+        &mut variants,
+        song_name.to_string(),
+        artist_name.to_string(),
+    );
     push_lrclib_query_variant(&mut variants, clean_title.clone(), artist_name.to_string());
     push_lrclib_query_variant(&mut variants, song_name.to_string(), clean_artist.clone());
     push_lrclib_query_variant(&mut variants, clean_title.clone(), clean_artist);
@@ -1354,7 +1493,12 @@ fn read_media_session_snapshot(
 ) -> Option<MediaSessionSnapshot> {
     let props = session.TryGetMediaPropertiesAsync().ok()?.get().ok()?;
     let title = props.Title().ok()?.to_string().trim().to_string();
-    let artist = props.Artist().map(|value| value.to_string()).unwrap_or_default().trim().to_string();
+    let artist = props
+        .Artist()
+        .map(|value| value.to_string())
+        .unwrap_or_default()
+        .trim()
+        .to_string();
     let source_app_id = session
         .SourceAppUserModelId()
         .map(|value| value.to_string())
@@ -1423,7 +1567,10 @@ fn snapshot_from_session(
     Some(snapshot)
 }
 
-fn fetch_media_session_snapshot(song_name: &str, artist_name: &str) -> Option<MediaSessionSnapshot> {
+fn fetch_media_session_snapshot(
+    song_name: &str,
+    artist_name: &str,
+) -> Option<MediaSessionSnapshot> {
     let manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync()
         .ok()?
         .get()
@@ -1483,7 +1630,7 @@ fn is_known_music_source(source: &str) -> bool {
         "yesplaymusic",
     ]
     .iter()
-        .any(|keyword| source.contains(keyword))
+    .any(|keyword| source.contains(keyword))
 }
 
 fn is_netease_music_source(source: &str) -> bool {
@@ -1508,8 +1655,8 @@ fn is_browser_source(source: &str) -> bool {
         "vivaldi",
         "browser",
     ]
-        .iter()
-        .any(|keyword| source.contains(keyword))
+    .iter()
+    .any(|keyword| source.contains(keyword))
 }
 
 fn media_kind_for_source(source: &str) -> &'static str {
@@ -1575,7 +1722,11 @@ fn media_session_score(snapshot: &MediaSessionSnapshot, is_current: bool) -> i32
         score += if snapshot.is_playing { 75 } else { 45 };
     }
     if browser {
-        score += if snapshot.thumbnail_data_uri.is_some() { 24 } else { 12 };
+        score += if snapshot.thumbnail_data_uri.is_some() {
+            24
+        } else {
+            12
+        };
     }
     if has_artist {
         score += 18;
@@ -1587,7 +1738,8 @@ fn media_session_score(snapshot: &MediaSessionSnapshot, is_current: bool) -> i32
 }
 
 fn accept_media_session(snapshot: &MediaSessionSnapshot) -> bool {
-    if is_browser_source(&snapshot.source_app_id) && !is_known_music_source(&snapshot.source_app_id) {
+    if is_browser_source(&snapshot.source_app_id) && !is_known_music_source(&snapshot.source_app_id)
+    {
         return false;
     }
 
@@ -1647,17 +1799,18 @@ unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL 
         let title_str = String::from_utf16_lossy(&title[..len as usize]);
         let clean_title = title_str.trim_matches('\0').trim().to_string();
 
-        if !clean_title.is_empty() && clean_title != "网易云音乐" && clean_title != "DesktopLyric" {
+        if !clean_title.is_empty() && clean_title != "网易云音乐" && clean_title != "DesktopLyric"
+        {
             let mut pid = 0;
             GetWindowThreadProcessId(hwnd, &mut pid);
 
             let info = &mut *(lparam as *mut MusicInfo);
             info.title = clean_title;
-            info.pid = pid; 
-            return FALSE; 
+            info.pid = pid;
+            return FALSE;
         }
     }
-    TRUE 
+    TRUE
 }
 
 unsafe extern "system" fn enum_netease_window_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
@@ -1692,21 +1845,27 @@ unsafe fn is_process_playing_audio(target_pid: u32) -> bool {
     let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
 
     let enumerator: IMMDeviceEnumerator = match windows::Win32::System::Com::CoCreateInstance(
-        &MMDeviceEnumerator, None, CLSCTX_ALL,
+        &MMDeviceEnumerator,
+        None,
+        CLSCTX_ALL,
     ) {
-        Ok(e) => e, Err(_) => return false,
+        Ok(e) => e,
+        Err(_) => return false,
     };
 
     let device = match enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia) {
-        Ok(d) => d, Err(_) => return false,
+        Ok(d) => d,
+        Err(_) => return false,
     };
 
     let manager: IAudioSessionManager2 = match device.Activate(CLSCTX_ALL, None) {
-        Ok(m) => m, Err(_) => return false,
+        Ok(m) => m,
+        Err(_) => return false,
     };
 
     let session_enum = match manager.GetSessionEnumerator() {
-        Ok(s) => s, Err(_) => return false,
+        Ok(s) => s,
+        Err(_) => return false,
     };
 
     let count = session_enum.GetCount().unwrap_or(0);
@@ -1758,8 +1917,11 @@ unsafe fn is_process_playing_audio(target_pid: u32) -> bool {
 
 #[tauri::command]
 async fn fetch_netease_music_info() -> Result<Option<MusicStatus>, String> {
-    let mut info = MusicInfo { title: String::new(), pid: 0 };
-    
+    let mut info = MusicInfo {
+        title: String::new(),
+        pid: 0,
+    };
+
     unsafe {
         EnumWindows(Some(enum_windows_proc), &mut info as *mut _ as LPARAM);
     }
@@ -1773,7 +1935,11 @@ async fn fetch_netease_music_info() -> Result<Option<MusicStatus>, String> {
 
     let parts: Vec<&str> = info.title.splitn(2, " - ").collect();
     let song_name = parts[0].to_string();
-    let artist_name = if parts.len() > 1 { parts[1].to_string() } else { "未知歌手".to_string() };
+    let artist_name = if parts.len() > 1 {
+        parts[1].to_string()
+    } else {
+        "未知歌手".to_string()
+    };
 
     let media_snapshot = fetch_media_session_snapshot(&song_name, &artist_name);
 
@@ -1814,21 +1980,27 @@ async fn fetch_music_info() -> Result<Option<MusicStatus>, String> {
             title: snapshot.title,
             artist: snapshot.artist,
             source_app_id: snapshot.source_app_id,
-            thumbnail_data_uri: snapshot
-                .thumbnail_data_uri
-                .or_else(|| netease_status.as_ref().and_then(|status| status.thumbnail_data_uri.clone())),
+            thumbnail_data_uri: snapshot.thumbnail_data_uri.or_else(|| {
+                netease_status
+                    .as_ref()
+                    .and_then(|status| status.thumbnail_data_uri.clone())
+            }),
             media_kind,
             is_playing: snapshot.is_playing
                 || netease_status
                     .as_ref()
                     .map(|status| status.is_playing)
                     .unwrap_or(false),
-            position_ms: snapshot
-                .position_ms
-                .or_else(|| netease_status.as_ref().and_then(|status| status.position_ms)),
-            duration_ms: snapshot
-                .duration_ms
-                .or_else(|| netease_status.as_ref().and_then(|status| status.duration_ms)),
+            position_ms: snapshot.position_ms.or_else(|| {
+                netease_status
+                    .as_ref()
+                    .and_then(|status| status.position_ms)
+            }),
+            duration_ms: snapshot.duration_ms.or_else(|| {
+                netease_status
+                    .as_ref()
+                    .and_then(|status| status.duration_ms)
+            }),
         }));
     }
 
@@ -1853,7 +2025,11 @@ async fn control_system_media(action: String) -> Result<(), String> {
 fn parse_lrc_timestamp(tag: &str) -> Option<u64> {
     let parts: Vec<&str> = tag.split(':').collect();
     let (hours, minutes, seconds) = match parts.as_slice() {
-        [minutes, seconds] => (0.0, minutes.parse::<f64>().ok()?, seconds.parse::<f64>().ok()?),
+        [minutes, seconds] => (
+            0.0,
+            minutes.parse::<f64>().ok()?,
+            seconds.parse::<f64>().ok()?,
+        ),
         [hours, minutes, seconds] => (
             hours.parse::<f64>().ok()?,
             minutes.parse::<f64>().ok()?,
@@ -1887,10 +2063,43 @@ fn is_lyric_credit_line(text: &str) -> bool {
         .collect::<String>();
 
     let cjk_prefixes = [
-        "作词", "作詞", "词", "詞", "作曲", "曲", "编曲", "編曲", "制作人", "制作",
-        "监制", "監製", "出品", "发行", "發行", "录音", "錄音", "混音", "母带",
-        "母帶", "和声", "和聲", "配唱", "统筹", "統籌", "企划", "企劃", "吉他",
-        "贝斯", "貝斯", "鼓", "键盘", "鍵盤", "弦乐", "弦樂", "人声", "人聲",
+        "作词",
+        "作詞",
+        "词",
+        "詞",
+        "作曲",
+        "曲",
+        "编曲",
+        "編曲",
+        "制作人",
+        "制作",
+        "监制",
+        "監製",
+        "出品",
+        "发行",
+        "發行",
+        "录音",
+        "錄音",
+        "混音",
+        "母带",
+        "母帶",
+        "和声",
+        "和聲",
+        "配唱",
+        "统筹",
+        "統籌",
+        "企划",
+        "企劃",
+        "吉他",
+        "贝斯",
+        "貝斯",
+        "鼓",
+        "键盘",
+        "鍵盤",
+        "弦乐",
+        "弦樂",
+        "人声",
+        "人聲",
     ];
     if cjk_prefixes.iter().any(|prefix| {
         compact.starts_with(prefix)
@@ -1904,12 +2113,31 @@ fn is_lyric_credit_line(text: &str) -> bool {
     }
 
     let latin_prefixes = [
-        "lyrics by", "lyricist", "written by", "composer", "composed by", "arranger",
-        "arranged by", "producer", "produced by", "mixing", "mixed by", "mastering",
-        "mastered by", "vocal", "guitar", "bass", "drums", "keyboard", "op:", "sp:",
+        "lyrics by",
+        "lyricist",
+        "written by",
+        "composer",
+        "composed by",
+        "arranger",
+        "arranged by",
+        "producer",
+        "produced by",
+        "mixing",
+        "mixed by",
+        "mastering",
+        "mastered by",
+        "vocal",
+        "guitar",
+        "bass",
+        "drums",
+        "keyboard",
+        "op:",
+        "sp:",
     ];
 
-    latin_prefixes.iter().any(|prefix| normalized.starts_with(prefix))
+    latin_prefixes
+        .iter()
+        .any(|prefix| normalized.starts_with(prefix))
 }
 
 fn parse_lrc_lines(raw: &str) -> Vec<SyncedLyricLine> {
@@ -1950,7 +2178,12 @@ fn parse_lrc_lines(raw: &str) -> Vec<SyncedLyricLine> {
     lines
 }
 
-fn lrclib_candidate_score(item: &serde_json::Value, song_name: &str, artist_name: &str, duration_ms: Option<u64>) -> i64 {
+fn lrclib_candidate_score(
+    item: &serde_json::Value,
+    song_name: &str,
+    artist_name: &str,
+    duration_ms: Option<u64>,
+) -> i64 {
     let title = item
         .get("trackName")
         .or_else(|| item.get("name"))
@@ -2006,7 +2239,12 @@ fn lrclib_candidate_score(item: &serde_json::Value, song_name: &str, artist_name
 }
 
 #[allow(unreachable_code)]
-fn netease_song_score(item: &serde_json::Value, song_name: &str, artist_name: &str, duration_ms: Option<u64>) -> i64 {
+fn netease_song_score(
+    item: &serde_json::Value,
+    song_name: &str,
+    artist_name: &str,
+    duration_ms: Option<u64>,
+) -> i64 {
     let title = item
         .get("name")
         .and_then(|value| value.as_str())
@@ -2060,7 +2298,10 @@ fn netease_song_score(item: &serde_json::Value, song_name: &str, artist_name: &s
     if text_matches(title, song_name) {
         score += 170;
     }
-    if artist_name.trim().is_empty() || artist_name == "未知歌手" || text_matches(&artists, artist_name) {
+    if artist_name.trim().is_empty()
+        || artist_name == "未知歌手"
+        || text_matches(&artists, artist_name)
+    {
         score += 120;
     }
 
@@ -2109,7 +2350,12 @@ async fn fetch_netease_synced_lyrics(
         .post("https://music.163.com/api/search/get/web")
         .header("Referer", "https://music.163.com")
         .header("User-Agent", ua)
-        .form(&[("s", query.as_str()), ("type", "1"), ("limit", "8"), ("offset", "0")])
+        .form(&[
+            ("s", query.as_str()),
+            ("type", "1"),
+            ("limit", "8"),
+            ("offset", "0"),
+        ])
         .send()
         .await
         .ok()?
@@ -2125,7 +2371,10 @@ async fn fetch_netease_synced_lyrics(
         .iter()
         .filter_map(|song| {
             let id = song.get("id").and_then(|value| value.as_i64())?;
-            Some((netease_song_score(song, song_name, artist_name, duration_ms), id))
+            Some((
+                netease_song_score(song, song_name, artist_name, duration_ms),
+                id,
+            ))
         })
         .max_by_key(|(score, _)| *score)?;
 
@@ -2148,7 +2397,9 @@ async fn fetch_netease_synced_lyrics(
         .await
         .ok()?;
 
-    let raw_lyrics = lyric_json.pointer("/lrc/lyric").and_then(|value| value.as_str())?;
+    let raw_lyrics = lyric_json
+        .pointer("/lrc/lyric")
+        .and_then(|value| value.as_str())?;
     let lines = parse_lrc_lines(raw_lyrics);
     if lines.len() >= 3 {
         Some(lines)
@@ -2171,7 +2422,10 @@ async fn fetch_lrclib_exact_synced_lyrics(
             query.append_pair("artist_name", artist_name);
         }
         if let Some(duration_ms) = duration_ms.filter(|value| *value > 0) {
-            query.append_pair("duration", &((duration_ms as f64 / 1000.0).round() as u64).to_string());
+            query.append_pair(
+                "duration",
+                &((duration_ms as f64 / 1000.0).round() as u64).to_string(),
+            );
         }
     }
 
@@ -2206,7 +2460,10 @@ async fn fetch_lrclib_search_synced_lyrics(
 ) -> Option<Vec<SyncedLyricLine>> {
     let mut best: Option<(i64, Vec<SyncedLyricLine>)> = None;
 
-    for (query_title, query_artist) in lrclib_query_variants(song_name, artist_name).into_iter().take(4) {
+    for (query_title, query_artist) in lrclib_query_variants(song_name, artist_name)
+        .into_iter()
+        .take(4)
+    {
         let mut url = reqwest::Url::parse("https://lrclib.net/api/search").ok()?;
         {
             let mut query = url.query_pairs_mut();
@@ -2215,7 +2472,10 @@ async fn fetch_lrclib_search_synced_lyrics(
                 query.append_pair("artist_name", &query_artist);
             }
             if let Some(duration_ms) = duration_ms.filter(|value| *value > 0) {
-                query.append_pair("duration", &((duration_ms as f64 / 1000.0).round() as u64).to_string());
+                query.append_pair(
+                    "duration",
+                    &((duration_ms as f64 / 1000.0).round() as u64).to_string(),
+                );
             }
         }
 
@@ -2244,12 +2504,20 @@ async fn fetch_lrclib_search_synced_lyrics(
             }
 
             let score = lrclib_candidate_score(&item, song_name, artist_name, duration_ms);
-            if best.as_ref().map(|(best_score, _)| score > *best_score).unwrap_or(true) {
+            if best
+                .as_ref()
+                .map(|(best_score, _)| score > *best_score)
+                .unwrap_or(true)
+            {
                 best = Some((score, lines));
             }
         }
 
-        if best.as_ref().map(|(score, _)| *score >= 285).unwrap_or(false) {
+        if best
+            .as_ref()
+            .map(|(score, _)| *score >= 285)
+            .unwrap_or(false)
+        {
             break;
         }
     }
@@ -2648,7 +2916,9 @@ async fn fetch_wagequ_synced_lyrics_inner(
 
     let mut best: Option<(i64, Vec<SyncedLyricLine>)> = None;
     for candidate in candidates.into_iter().take(8) {
-        let Some((detail_title, detail_artist, lines)) = fetch_wagequ_detail(client, &candidate.url).await else {
+        let Some((detail_title, detail_artist, lines)) =
+            fetch_wagequ_detail(client, &candidate.url).await
+        else {
             continue;
         };
         let title = if detail_title.is_empty() {
@@ -2661,8 +2931,19 @@ async fn fetch_wagequ_synced_lyrics_inner(
         } else {
             detail_artist.as_str()
         };
-        let score = wagequ_candidate_score(title, artist, song_name, artist_name, duration_ms, Some(&lines));
-        if best.as_ref().map(|(best_score, _)| score > *best_score).unwrap_or(true) {
+        let score = wagequ_candidate_score(
+            title,
+            artist,
+            song_name,
+            artist_name,
+            duration_ms,
+            Some(&lines),
+        );
+        if best
+            .as_ref()
+            .map(|(best_score, _)| score > *best_score)
+            .unwrap_or(true)
+        {
             best = Some((score, lines));
         }
     }
@@ -2704,7 +2985,8 @@ async fn fetch_synced_lyrics(
         .map_err(|e| e.to_string())?;
 
     if false && (contains_cjk_text(title) || contains_cjk_text(artist)) {
-        if let Some(lines) = fetch_netease_synced_lyrics(&client, title, artist, duration_ms).await {
+        if let Some(lines) = fetch_netease_synced_lyrics(&client, title, artist, duration_ms).await
+        {
             return Ok(Some(SyncedLyrics {
                 source: "网易云音乐".to_string(),
                 lines,
@@ -2712,22 +2994,25 @@ async fn fetch_synced_lyrics(
         }
     }
 
-    if let Some(lines) = fetch_lrclib_exact_synced_lyrics(&client, title, artist, duration_ms).await {
+    if let Some(lines) = fetch_lrclib_exact_synced_lyrics(&client, title, artist, duration_ms).await
+    {
         return Ok(Some(SyncedLyrics {
             source: "LRCLIB".to_string(),
             lines,
         }));
     }
 
-    if let Some(lines) = fetch_lrclib_search_synced_lyrics(&client, title, artist, duration_ms).await {
+    if let Some(lines) =
+        fetch_lrclib_search_synced_lyrics(&client, title, artist, duration_ms).await
+    {
         return Ok(Some(SyncedLyrics {
             source: "LRCLIB".to_string(),
             lines,
         }));
     }
 
-    let mut url = reqwest::Url::parse("https://lrclib.net/api/search")
-        .map_err(|e| e.to_string())?;
+    let mut url =
+        reqwest::Url::parse("https://lrclib.net/api/search").map_err(|e| e.to_string())?;
     {
         let mut query = url.query_pairs_mut();
         query.append_pair("track_name", title);
@@ -2735,18 +3020,18 @@ async fn fetch_synced_lyrics(
             query.append_pair("artist_name", artist);
         }
         if let Some(duration_ms) = duration_ms.filter(|value| *value > 0) {
-            query.append_pair("duration", &((duration_ms as f64 / 1000.0).round() as u64).to_string());
+            query.append_pair(
+                "duration",
+                &((duration_ms as f64 / 1000.0).round() as u64).to_string(),
+            );
         }
     }
 
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| e.to_string())?;
+    let response = client.get(url).send().await.map_err(|e| e.to_string())?;
 
     if !response.status().is_success() {
-        if let Some(lines) = fetch_netease_synced_lyrics(&client, title, artist, duration_ms).await {
+        if let Some(lines) = fetch_netease_synced_lyrics(&client, title, artist, duration_ms).await
+        {
             return Ok(Some(SyncedLyrics {
                 source: "NetEase".to_string(),
                 lines,
@@ -2781,7 +3066,11 @@ async fn fetch_synced_lyrics(
         }
 
         let score = lrclib_candidate_score(&item, title, artist, duration_ms);
-        if best.as_ref().map(|(best_score, _)| score > *best_score).unwrap_or(true) {
+        if best
+            .as_ref()
+            .map(|(best_score, _)| score > *best_score)
+            .unwrap_or(true)
+        {
             best = Some((score, lines));
         }
     }
@@ -2809,12 +3098,14 @@ async fn fetch_synced_lyrics(
         }));
     }
 
-    Ok(fetch_netease_synced_lyrics(&client, title, artist, duration_ms)
-        .await
-        .map(|lines| SyncedLyrics {
-            source: "网易云音乐".to_string(),
-            lines,
-        }))
+    Ok(
+        fetch_netease_synced_lyrics(&client, title, artist, duration_ms)
+            .await
+            .map(|lines| SyncedLyrics {
+                source: "网易云音乐".to_string(),
+                lines,
+            }),
+    )
 }
 
 async fn cover_url_to_data_uri(client: &reqwest::Client, url: String) -> String {
@@ -2880,7 +3171,12 @@ async fn fetch_netease_cover_url(
         .post("https://music.163.com/api/search/get/web")
         .header("Referer", "https://music.163.com")
         .header("User-Agent", ua)
-        .form(&[("s", query.as_str()), ("type", "1"), ("limit", "8"), ("offset", "0")])
+        .form(&[
+            ("s", query.as_str()),
+            ("type", "1"),
+            ("limit", "8"),
+            ("offset", "0"),
+        ])
         .send()
         .await
         .ok()?
@@ -2902,7 +3198,11 @@ async fn fetch_netease_cover_url(
                 .and_then(|value| value.as_str())
                 .unwrap_or_default()
                 .to_string();
-            Some((netease_song_score(song, song_name, artist_name, None), id, pic))
+            Some((
+                netease_song_score(song, song_name, artist_name, None),
+                id,
+                pic,
+            ))
         })
         .max_by_key(|(score, _, _)| *score)?;
 
@@ -2943,7 +3243,10 @@ async fn fetch_netease_cover_url(
     if pic.is_empty() {
         None
     } else {
-        Some(format!("{}?param=300y300", pic.replace("http://", "https://")))
+        Some(format!(
+            "{}?param=300y300",
+            pic.replace("http://", "https://")
+        ))
     }
 }
 
@@ -3163,7 +3466,9 @@ async fn get_random_cover_url(
     let song_itunes = song_name.clone();
     let artist_itunes = artist_name.clone();
     tokio::spawn(async move {
-        if let Some(url) = fetch_itunes_cover_url(&client_itunes, &song_itunes, &artist_itunes).await {
+        if let Some(url) =
+            fetch_itunes_cover_url(&client_itunes, &song_itunes, &artist_itunes).await
+        {
             let _ = tx_itunes.send(url).await;
         }
     });
@@ -3173,7 +3478,9 @@ async fn get_random_cover_url(
     let song_netease = song_name.clone();
     let artist_netease = artist_name.clone();
     tokio::spawn(async move {
-        if let Some(url) = fetch_netease_cover_url(&client_netease, &song_netease, &artist_netease).await {
+        if let Some(url) =
+            fetch_netease_cover_url(&client_netease, &song_netease, &artist_netease).await
+        {
             let _ = tx_netease.send(url).await;
         }
     });
@@ -3183,7 +3490,9 @@ async fn get_random_cover_url(
     let song_deezer = song_name.clone();
     let artist_deezer = artist_name.clone();
     tokio::spawn(async move {
-        if let Some(url) = fetch_deezer_cover_url(&client_deezer, &song_deezer, &artist_deezer).await {
+        if let Some(url) =
+            fetch_deezer_cover_url(&client_deezer, &song_deezer, &artist_deezer).await
+        {
             let _ = tx_deezer.send(url).await;
         }
     });
@@ -3294,8 +3603,12 @@ fn title_has_attention_signal(title: &str) -> bool {
         || lower.contains("条消息")
         || lower.contains("new message")
         || lower.contains("unread")
-        || (title.starts_with('[') && title.chars().take_while(|ch| *ch != ']').count() <= 5 && title.contains(']'))
-        || (title.starts_with('(') && title.chars().take_while(|ch| *ch != ')').count() <= 5 && title.contains(')'))
+        || (title.starts_with('[')
+            && title.chars().take_while(|ch| *ch != ']').count() <= 5
+            && title.contains(']'))
+        || (title.starts_with('(')
+            && title.chars().take_while(|ch| *ch != ')').count() <= 5
+            && title.contains(')'))
 }
 
 unsafe extern "system" fn enum_taskbar_notify_window_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
@@ -3331,7 +3644,10 @@ fn fetch_taskbar_notification_fallback() -> Option<ToastData> {
     };
 
     unsafe {
-        EnumWindows(Some(enum_taskbar_notify_window_proc), &mut context as *mut _ as LPARAM);
+        EnumWindows(
+            Some(enum_taskbar_notify_window_proc),
+            &mut context as *mut _ as LPARAM,
+        );
     }
 
     let state_lock = TASKBAR_NOTIFY_STATE.get_or_init(|| Mutex::new(TaskbarNotifyState::default()));
@@ -3423,7 +3739,9 @@ async fn fetch_latest_notification() -> Result<Option<ToastData>, String> {
         }
     }
 
-    if max_id == 0 { return Ok(fetch_taskbar_notification_fallback()); }
+    if max_id == 0 {
+        return Ok(fetch_taskbar_notification_fallback());
+    }
 
     let last_processed_id = LAST_NOTIFICATION_ID.load(Ordering::SeqCst);
 
@@ -3437,13 +3755,15 @@ async fn fetch_latest_notification() -> Result<Option<ToastData>, String> {
         LAST_NOTIFICATION_ID.store(max_id, Ordering::SeqCst);
 
         if let Some(notif) = latest_notif {
-            let app_name = notif.AppInfo()
+            let app_name = notif
+                .AppInfo()
                 .and_then(|info| info.DisplayInfo())
                 .and_then(|dinfo| dinfo.DisplayName())
                 .map(|name| name.to_string())
                 .unwrap_or_else(|_| "系统通知".to_string());
 
-            let aumid = notif.AppInfo()
+            let aumid = notif
+                .AppInfo()
                 .and_then(|info| info.AppUserModelId())
                 .map(|id| id.to_string())
                 .unwrap_or_default();
@@ -3469,7 +3789,12 @@ async fn fetch_latest_notification() -> Result<Option<ToastData>, String> {
                             String::new()
                         };
 
-                        return Ok(Some(ToastData { app_name, title, body, aumid }));
+                        return Ok(Some(ToastData {
+                            app_name,
+                            title,
+                            body,
+                            aumid,
+                        }));
                     }
                 }
             }
@@ -3482,25 +3807,29 @@ async fn fetch_latest_notification() -> Result<Option<ToastData>, String> {
 #[tauri::command]
 fn open_app_by_aumid(aumid: String, app_name: String) {
     let app_lower = app_name.to_lowercase();
-    
+
     unsafe {
         keybd_event(VK_MENU as u8, 0, 0, 0);
         keybd_event(VK_MENU as u8, 0, KEYEVENTF_KEYUP, 0);
     }
-    
-    let execute_protocol = |protocol: &str| {
-        unsafe {
-            let op = std::ffi::OsStr::new("open").encode_wide().chain(Some(0)).collect::<Vec<u16>>();
-            let file = std::ffi::OsStr::new(protocol).encode_wide().chain(Some(0)).collect::<Vec<u16>>();
-            ShellExecuteW(
-                std::ptr::null_mut(),
-                op.as_ptr(),
-                file.as_ptr(),
-                std::ptr::null(),
-                std::ptr::null(),
-                SW_SHOWNORMAL,
-            );
-        }
+
+    let execute_protocol = |protocol: &str| unsafe {
+        let op = std::ffi::OsStr::new("open")
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
+        let file = std::ffi::OsStr::new(protocol)
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            op.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        );
     };
 
     if app_lower.contains("qq") {
@@ -3511,9 +3840,18 @@ fn open_app_by_aumid(aumid: String, app_name: String) {
         execute_protocol("dingtalk://");
     } else if !aumid.is_empty() {
         unsafe {
-            let op = std::ffi::OsStr::new("open").encode_wide().chain(Some(0)).collect::<Vec<u16>>();
-            let file = std::ffi::OsStr::new("explorer.exe").encode_wide().chain(Some(0)).collect::<Vec<u16>>();
-            let params = std::ffi::OsStr::new(&format!("shell:AppsFolder\\{}", aumid)).encode_wide().chain(Some(0)).collect::<Vec<u16>>();
+            let op = std::ffi::OsStr::new("open")
+                .encode_wide()
+                .chain(Some(0))
+                .collect::<Vec<u16>>();
+            let file = std::ffi::OsStr::new("explorer.exe")
+                .encode_wide()
+                .chain(Some(0))
+                .collect::<Vec<u16>>();
+            let params = std::ffi::OsStr::new(&format!("shell:AppsFolder\\{}", aumid))
+                .encode_wide()
+                .chain(Some(0))
+                .collect::<Vec<u16>>();
             ShellExecuteW(
                 std::ptr::null_mut(),
                 op.as_ptr(),
@@ -3528,8 +3866,14 @@ fn open_app_by_aumid(aumid: String, app_name: String) {
 
 fn shell_execute_open(target: &str) {
     unsafe {
-        let op = std::ffi::OsStr::new("open").encode_wide().chain(Some(0)).collect::<Vec<u16>>();
-        let file = std::ffi::OsStr::new(target).encode_wide().chain(Some(0)).collect::<Vec<u16>>();
+        let op = std::ffi::OsStr::new("open")
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
+        let file = std::ffi::OsStr::new(target)
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<u16>>();
         ShellExecuteW(
             std::ptr::null_mut(),
             op.as_ptr(),
@@ -3601,8 +3945,14 @@ fn open_music_app(source_app_id: String) -> Result<(), String> {
 
     if !source_app_id.trim().is_empty() {
         unsafe {
-            let op = std::ffi::OsStr::new("open").encode_wide().chain(Some(0)).collect::<Vec<u16>>();
-            let file = std::ffi::OsStr::new("explorer.exe").encode_wide().chain(Some(0)).collect::<Vec<u16>>();
+            let op = std::ffi::OsStr::new("open")
+                .encode_wide()
+                .chain(Some(0))
+                .collect::<Vec<u16>>();
+            let file = std::ffi::OsStr::new("explorer.exe")
+                .encode_wide()
+                .chain(Some(0))
+                .collect::<Vec<u16>>();
             let params = std::ffi::OsStr::new(&format!("shell:AppsFolder\\{}", source_app_id))
                 .encode_wide()
                 .chain(Some(0))
@@ -3628,7 +3978,10 @@ fn open_netease_music() -> Result<(), String> {
         let mut search = WindowSearch {
             hwnd: std::ptr::null_mut(),
         };
-        EnumWindows(Some(enum_netease_window_proc), &mut search as *mut _ as LPARAM);
+        EnumWindows(
+            Some(enum_netease_window_proc),
+            &mut search as *mut _ as LPARAM,
+        );
 
         if !search.hwnd.is_null() {
             ShowWindow(search.hwnd, SW_SHOWNORMAL);
@@ -3644,7 +3997,10 @@ fn open_netease_music() -> Result<(), String> {
         "C:\\Program Files (x86)\\Netease\\CloudMusic\\cloudmusic.exe",
     ];
 
-    if let Some(path) = candidates.iter().find(|path| std::path::Path::new(path).exists()) {
+    if let Some(path) = candidates
+        .iter()
+        .find(|path| std::path::Path::new(path).exists())
+    {
         shell_execute_open(path);
     } else {
         shell_execute_open("orpheus://");
@@ -3686,12 +4042,10 @@ fn is_foreground_fullscreen() -> Result<bool, String> {
         }
 
         let tolerance = 4;
-        Ok(
-            rect.left <= mi.rcMonitor.left + tolerance
-                && rect.top <= mi.rcMonitor.top + tolerance
-                && rect.right >= mi.rcMonitor.right - tolerance
-                && rect.bottom >= mi.rcMonitor.bottom - tolerance,
-        )
+        Ok(rect.left <= mi.rcMonitor.left + tolerance
+            && rect.top <= mi.rcMonitor.top + tolerance
+            && rect.right >= mi.rcMonitor.right - tolerance
+            && rect.bottom >= mi.rcMonitor.bottom - tolerance)
     }
 }
 
@@ -3719,20 +4073,31 @@ fn force_window_topmost(app: tauri::AppHandle) {
             let fg_hwnd = winapi::um::winuser::GetForegroundWindow();
             if !fg_hwnd.is_null() {
                 let mut class_name = [0u16; 256];
-                let len = winapi::um::winuser::GetClassNameW(fg_hwnd, class_name.as_mut_ptr(), class_name.len() as i32);
+                let len = winapi::um::winuser::GetClassNameW(
+                    fg_hwnd,
+                    class_name.as_mut_ptr(),
+                    class_name.len() as i32,
+                );
                 let class_str = String::from_utf16_lossy(&class_name[..len as usize]);
 
                 let mut rect: RECT = std::mem::zeroed();
                 winapi::um::winuser::GetWindowRect(fg_hwnd, &mut rect);
 
-                let monitor = winapi::um::winuser::MonitorFromWindow(fg_hwnd, winapi::um::winuser::MONITOR_DEFAULTTONEAREST);
+                let monitor = winapi::um::winuser::MonitorFromWindow(
+                    fg_hwnd,
+                    winapi::um::winuser::MONITOR_DEFAULTTONEAREST,
+                );
                 let mut mi: winapi::um::winuser::MONITORINFO = std::mem::zeroed();
                 mi.cbSize = std::mem::size_of::<winapi::um::winuser::MONITORINFO>() as u32;
                 winapi::um::winuser::GetMonitorInfoW(monitor, &mut mi);
 
-                if rect.left == mi.rcMonitor.left && rect.top == mi.rcMonitor.top && rect.right == mi.rcMonitor.right && rect.bottom == mi.rcMonitor.bottom {
+                if rect.left == mi.rcMonitor.left
+                    && rect.top == mi.rcMonitor.top
+                    && rect.right == mi.rcMonitor.right
+                    && rect.bottom == mi.rcMonitor.bottom
+                {
                     if !is_shell_surface_class(&class_str) {
-                        return; 
+                        return;
                     }
                 }
             }
@@ -3740,7 +4105,15 @@ fn force_window_topmost(app: tauri::AppHandle) {
             if let Some(win) = app.get_webview_window("widget") {
                 if let Ok(hwnd) = win.hwnd() {
                     // SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_SHOWWINDOW
-                    winapi::um::winuser::SetWindowPos(hwnd.0 as _, -1isize as _, 0, 0, 0, 0, 0x0053);
+                    winapi::um::winuser::SetWindowPos(
+                        hwnd.0 as _,
+                        -1isize as _,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0x0053,
+                    );
                 }
             }
         }
@@ -3760,7 +4133,10 @@ fn set_window_bounds(app: tauri::AppHandle, x: i32, y: i32, width: i32, height: 
                     winapi::um::winuser::SetWindowPos(
                         hwnd.0 as _,
                         std::ptr::null_mut(),
-                        x, y, width, height,
+                        x,
+                        y,
+                        width,
+                        height,
                         0x0014,
                     );
                 }
@@ -3779,13 +4155,16 @@ struct AppState {
 #[tauri::command]
 fn get_hardware_stats(state: State<'_, AppState>) -> HardwareStats {
     let mut sys = state.system.lock().unwrap();
-    sys.refresh_cpu_usage(); 
-    sys.refresh_memory();    
+    sys.refresh_cpu_usage();
+    sys.refresh_memory();
 
     let mut stats = HardwareStats::default();
     stats.cpu_usage = sys.global_cpu_info().cpu_usage();
     let hardware_monitor_roots = state.hardware_monitor_roots.lock().unwrap().clone();
-    let aux_stats = query_hardware_aux_cached(Arc::clone(&state.hardware_sensor_cache), hardware_monitor_roots);
+    let aux_stats = query_hardware_aux_cached(
+        Arc::clone(&state.hardware_sensor_cache),
+        hardware_monitor_roots,
+    );
     stats.cpu_temperature = aux_stats.cpu_temperature;
     stats.cpu_fan_rpm = aux_stats.cpu_fan_rpm;
     stats.gpu_fan_rpm = aux_stats.gpu_fan_rpm;
@@ -3845,10 +4224,12 @@ fn read_power_status() -> Option<(bool, bool, bool, Option<u8>)> {
 unsafe fn read_master_volume_percent() -> Option<u8> {
     let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
 
-    let enumerator: IMMDeviceEnumerator = windows::Win32::System::Com::CoCreateInstance(
-        &MMDeviceEnumerator, None, CLSCTX_ALL,
-    ).ok()?;
-    let device = enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia).ok()?;
+    let enumerator: IMMDeviceEnumerator =
+        windows::Win32::System::Com::CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
+            .ok()?;
+    let device = enumerator
+        .GetDefaultAudioEndpoint(eRender, eMultimedia)
+        .ok()?;
     let endpoint: IAudioEndpointVolume = device.Activate(CLSCTX_ALL, None).ok()?;
     let scalar = endpoint.GetMasterVolumeLevelScalar().ok()?;
     let percent = (scalar.clamp(0.0, 1.0) * 100.0).round() as u8;
@@ -3892,30 +4273,27 @@ fn release_download_url_from_tag(tag_name: &str) -> Option<String> {
     ))
 }
 
-fn pick_installer_download_url(data: &serde_json::Value) -> Option<String> {
+fn release_asset_from_json(asset: &serde_json::Value) -> Option<ReleaseAsset> {
+    Some(ReleaseAsset {
+        download_url: asset.get("browser_download_url")?.as_str()?.to_string(),
+        digest: asset
+            .get("digest")
+            .and_then(|value| value.as_str())
+            .map(str::to_string),
+        size: asset.get("size").and_then(|value| value.as_u64()),
+    })
+}
+
+fn pick_installer_asset(data: &serde_json::Value) -> Option<ReleaseAsset> {
     let assets = data.get("assets")?.as_array()?;
-    assets
-        .iter()
-        .find_map(|asset| {
-            let name = asset.get("name")?.as_str()?.to_lowercase();
-            let url = asset.get("browser_download_url")?.as_str()?;
-            if name.ends_with(".exe") && name.contains("setup") {
-                Some(url.to_string())
-            } else {
-                None
-            }
-        })
-        .or_else(|| {
-            assets.iter().find_map(|asset| {
-                let name = asset.get("name")?.as_str()?.to_lowercase();
-                let url = asset.get("browser_download_url")?.as_str()?;
-                if name.ends_with(".msi") {
-                    Some(url.to_string())
-                } else {
-                    None
-                }
-            })
-        })
+    assets.iter().find_map(|asset| {
+        let name = asset.get("name")?.as_str()?.to_lowercase();
+        if name.ends_with(".exe") && name.contains("setup") {
+            release_asset_from_json(asset)
+        } else {
+            None
+        }
+    })
 }
 
 fn github_rate_limit_reset_text(headers: &reqwest::header::HeaderMap) -> Option<String> {
@@ -3932,7 +4310,9 @@ fn github_rate_limit_reset_text(headers: &reqwest::header::HeaderMap) -> Option<
     }
 }
 
-async fn fetch_release_from_github_latest_page(client: &reqwest::Client) -> Result<ReleaseInfo, String> {
+async fn fetch_release_from_github_latest_page(
+    client: &reqwest::Client,
+) -> Result<ReleaseInfo, String> {
     let response = client
         .get("https://github.com/CHmua/FlowIsland/releases/latest")
         .send()
@@ -3941,7 +4321,10 @@ async fn fetch_release_from_github_latest_page(client: &reqwest::Client) -> Resu
 
     let final_url = response.url().to_string();
     if !response.status().is_success() {
-        return Err(format!("GitHub Releases 页面返回 HTTP {}", response.status().as_u16()));
+        return Err(format!(
+            "GitHub Releases 页面返回 HTTP {}",
+            response.status().as_u16()
+        ));
     }
 
     let tag_name = extract_release_tag_from_url(&final_url)
@@ -3951,6 +4334,8 @@ async fn fetch_release_from_github_latest_page(client: &reqwest::Client) -> Resu
         name: tag_name.trim_start_matches('v').to_string(),
         html_url: final_url,
         download_url: release_download_url_from_tag(&tag_name),
+        asset_digest: None,
+        asset_size: None,
         tag_name,
         source: "github-page".to_string(),
     })
@@ -3985,6 +4370,7 @@ async fn fetch_latest_release_info() -> Result<ReleaseInfo, String> {
             if tag_name.trim().is_empty() {
                 return Err("GitHub Release 没有版本号。".to_string());
             }
+            let installer_asset = pick_installer_asset(&data);
             Ok(ReleaseInfo {
                 name: data
                     .get("name")
@@ -3996,8 +4382,14 @@ async fn fetch_latest_release_info() -> Result<ReleaseInfo, String> {
                     .and_then(|value| value.as_str())
                     .unwrap_or("https://github.com/CHmua/FlowIsland/releases/latest")
                     .to_string(),
-                download_url: pick_installer_download_url(&data)
+                download_url: installer_asset
+                    .as_ref()
+                    .map(|asset| asset.download_url.clone())
                     .or_else(|| release_download_url_from_tag(&tag_name)),
+                asset_digest: installer_asset
+                    .as_ref()
+                    .and_then(|asset| asset.digest.clone()),
+                asset_size: installer_asset.and_then(|asset| asset.size),
                 tag_name,
                 source: "github-api".to_string(),
             })
@@ -4013,18 +4405,269 @@ async fn fetch_latest_release_info() -> Result<ReleaseInfo, String> {
 
             if status == 403 && detail.to_lowercase().contains("rate limit") {
                 let retry_text = reset_text.unwrap_or_else(|| "稍后".to_string());
-                return Err(format!("GitHub 临时限制了未登录检查更新的访问频率，请{}再试。", retry_text));
+                return Err(format!(
+                    "GitHub 临时限制了未登录检查更新的访问频率，请{}再试。",
+                    retry_text
+                ));
             }
             if status == 404 {
-                return Err("没有找到公开的更新源。请确认 GitHub 仓库已设为 Public，并且已经发布 Release。".to_string());
+                return Err(
+                    "没有找到公开的更新源。请确认 GitHub 仓库已设为 Public，并且已经发布 Release。"
+                        .to_string(),
+                );
             }
             Err(format!("更新源返回异常状态：HTTP {}。", status))
         }
         Err(err) => match fetch_release_from_github_latest_page(&client).await {
             Ok(release) => Ok(release),
-            Err(fallback_err) => Err(format!("无法连接更新源：{}；兜底检查也失败：{}", err, fallback_err)),
+            Err(fallback_err) => Err(format!(
+                "无法连接更新源：{}；兜底检查也失败：{}",
+                err, fallback_err
+            )),
         },
     }
+}
+
+fn validate_update_download_url(download_url: &str) -> Result<reqwest::Url, String> {
+    let url = reqwest::Url::parse(download_url).map_err(|_| "更新包下载地址无效。".to_string())?;
+    if url.scheme() != "https" || url.host_str() != Some("github.com") {
+        return Err("为保证安全，只允许从 FlowIsland 官方 GitHub Release 下载更新。".to_string());
+    }
+
+    let segments = url
+        .path_segments()
+        .map(|segments| segments.collect::<Vec<_>>())
+        .unwrap_or_default();
+    let is_official_release = segments.len() == 6
+        && segments[0].eq_ignore_ascii_case("CHmua")
+        && segments[1].eq_ignore_ascii_case("FlowIsland")
+        && segments[2] == "releases"
+        && segments[3] == "download"
+        && !segments[4].is_empty()
+        && !segments[4].contains("..")
+        && segments[5].to_ascii_lowercase().starts_with("flowisland_")
+        && segments[5].to_ascii_lowercase().ends_with("_x64-setup.exe");
+    if !is_official_release {
+        return Err("更新包不是 FlowIsland 官方 x64 安装程序。".to_string());
+    }
+    Ok(url)
+}
+
+fn normalize_expected_sha256(expected_digest: Option<String>) -> Result<Option<String>, String> {
+    let Some(raw_digest) = expected_digest else {
+        return Ok(None);
+    };
+    let digest = raw_digest
+        .trim()
+        .strip_prefix("sha256:")
+        .unwrap_or(raw_digest.trim())
+        .to_ascii_lowercase();
+    if digest.len() != 64
+        || !digest
+            .chars()
+            .all(|character| character.is_ascii_hexdigit())
+    {
+        return Err("GitHub 返回的更新包校验值无效。".to_string());
+    }
+    Ok(Some(digest))
+}
+
+#[cfg(test)]
+mod update_validation_tests {
+    use super::{normalize_expected_sha256, validate_update_download_url};
+
+    #[test]
+    fn accepts_official_flowisland_installer() {
+        let url = "https://github.com/CHmua/FlowIsland/releases/download/v2.3.11/FlowIsland_2.3.11_x64-setup.exe";
+        assert!(validate_update_download_url(url).is_ok());
+    }
+
+    #[test]
+    fn rejects_other_repositories_and_files() {
+        assert!(validate_update_download_url(
+            "https://github.com/someone/FlowIsland/releases/download/v9/FlowIsland_9_x64-setup.exe"
+        )
+        .is_err());
+        assert!(validate_update_download_url(
+            "https://github.com/CHmua/FlowIsland/releases/download/v9/notes.txt"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn normalizes_github_sha256_digest() {
+        let digest = format!("sha256:{}", "a".repeat(64));
+        assert_eq!(
+            normalize_expected_sha256(Some(digest)).unwrap(),
+            Some("a".repeat(64))
+        );
+        assert!(normalize_expected_sha256(Some("sha256:invalid".to_string())).is_err());
+    }
+}
+
+fn emit_update_progress(
+    app: &tauri::AppHandle,
+    status: &str,
+    downloaded: u64,
+    total: Option<u64>,
+    percent: u8,
+) {
+    let _ = app.emit(
+        "update-download-progress",
+        UpdateDownloadProgress {
+            status: status.to_string(),
+            downloaded,
+            total,
+            percent,
+        },
+    );
+}
+
+#[tauri::command]
+async fn download_and_install_update(
+    app: tauri::AppHandle,
+    download_url: String,
+    version: String,
+    expected_digest: Option<String>,
+    expected_size: Option<u64>,
+) -> Result<(), String> {
+    const MIN_INSTALLER_SIZE: u64 = 256 * 1024;
+    const MAX_INSTALLER_SIZE: u64 = 300 * 1024 * 1024;
+
+    let url = validate_update_download_url(&download_url)?;
+    let expected_sha256 = normalize_expected_sha256(expected_digest)?;
+    let safe_version = version
+        .trim_start_matches('v')
+        .chars()
+        .filter(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '-' | '_')
+        })
+        .collect::<String>();
+    if safe_version.is_empty() {
+        return Err("更新版本号无效。".to_string());
+    }
+
+    let temp_dir = env::temp_dir().join("FlowIslandUpdates");
+    tokio::fs::create_dir_all(&temp_dir)
+        .await
+        .map_err(|err| format!("无法创建更新缓存目录：{}", err))?;
+    let installer_path = temp_dir.join(format!("FlowIsland_{}_x64-setup.exe", safe_version));
+    let partial_path = installer_path.with_extension("exe.part");
+    let _ = tokio::fs::remove_file(&partial_path).await;
+
+    emit_update_progress(&app, "正在连接 GitHub…", 0, expected_size, 0);
+    let client = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .timeout(Duration::from_secs(15 * 60))
+        .user_agent(format!("FlowIsland/{} updater", env!("CARGO_PKG_VERSION")))
+        .redirect(reqwest::redirect::Policy::limited(8))
+        .build()
+        .map_err(|err| format!("无法创建更新下载器：{}", err))?;
+    let mut response = client
+        .get(url)
+        .header("Accept", "application/octet-stream")
+        .send()
+        .await
+        .map_err(|err| format!("连接更新服务器失败：{}", err))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "下载更新包失败：HTTP {}",
+            response.status().as_u16()
+        ));
+    }
+    let final_host = response.url().host_str().unwrap_or_default();
+    let is_trusted_download_host = final_host == "github.com"
+        || final_host == "release-assets.githubusercontent.com"
+        || final_host.ends_with(".githubusercontent.com");
+    if response.url().scheme() != "https" || !is_trusted_download_host {
+        return Err("更新下载被重定向到非 GitHub 地址，已停止安装。".to_string());
+    }
+
+    let response_size = response.content_length();
+    if let (Some(server_size), Some(asset_size)) = (response_size, expected_size) {
+        if server_size != asset_size {
+            return Err("更新包大小与 GitHub Release 信息不一致。".to_string());
+        }
+    }
+    let total = response_size.or(expected_size);
+    if total.is_some_and(|size| size < MIN_INSTALLER_SIZE || size > MAX_INSTALLER_SIZE) {
+        return Err("更新包大小异常，已停止安装。".to_string());
+    }
+
+    let mut file = tokio::fs::File::create(&partial_path)
+        .await
+        .map_err(|err| format!("无法创建更新文件：{}", err))?;
+    let mut hasher = Sha256::new();
+    let mut downloaded = 0u64;
+    let mut last_percent = 0u8;
+    let mut executable_header = Vec::with_capacity(2);
+
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|err| format!("下载更新包时连接中断：{}", err))?
+    {
+        if executable_header.len() < 2 {
+            let needed = 2 - executable_header.len();
+            executable_header.extend_from_slice(&chunk[..chunk.len().min(needed)]);
+        }
+        downloaded = downloaded.saturating_add(chunk.len() as u64);
+        if downloaded > MAX_INSTALLER_SIZE {
+            let _ = tokio::fs::remove_file(&partial_path).await;
+            return Err("更新包超过允许的最大大小，已停止安装。".to_string());
+        }
+        hasher.update(&chunk);
+        file.write_all(&chunk)
+            .await
+            .map_err(|err| format!("保存更新包失败：{}", err))?;
+
+        let percent = total
+            .filter(|size| *size > 0)
+            .map(|size| ((downloaded.saturating_mul(100) / size).min(99)) as u8)
+            .unwrap_or(0);
+        if percent != last_percent {
+            last_percent = percent;
+            emit_update_progress(&app, "正在下载更新…", downloaded, total, percent);
+        }
+    }
+    file.flush()
+        .await
+        .map_err(|err| format!("写入更新包失败：{}", err))?;
+    drop(file);
+
+    if downloaded < MIN_INSTALLER_SIZE || executable_header.as_slice() != b"MZ" {
+        let _ = tokio::fs::remove_file(&partial_path).await;
+        return Err("下载内容不是有效的 Windows 安装程序。".to_string());
+    }
+    if expected_size.is_some_and(|size| size != downloaded) {
+        let _ = tokio::fs::remove_file(&partial_path).await;
+        return Err("更新包下载不完整，已停止安装。".to_string());
+    }
+
+    emit_update_progress(&app, "正在校验更新包…", downloaded, total, 99);
+    let actual_sha256 = format!("{:x}", hasher.finalize());
+    if expected_sha256.is_some_and(|expected| expected != actual_sha256) {
+        let _ = tokio::fs::remove_file(&partial_path).await;
+        return Err("更新包 SHA-256 校验失败，已阻止安装。".to_string());
+    }
+
+    let _ = tokio::fs::remove_file(&installer_path).await;
+    tokio::fs::rename(&partial_path, &installer_path)
+        .await
+        .map_err(|err| format!("准备更新安装包失败：{}", err))?;
+    emit_update_progress(&app, "校验完成，正在启动安装…", downloaded, total, 100);
+
+    let mut command = Command::new(&installer_path);
+    command.args(["/S", "/UPDATE"]);
+    #[cfg(target_os = "windows")]
+    command.creation_flags(0x08000000);
+    command
+        .spawn()
+        .map_err(|err| format!("无法启动更新安装程序：{}", err))?;
+
+    tokio::time::sleep(Duration::from_millis(350)).await;
+    app.exit(0);
+    Ok(())
 }
 
 #[tauri::command]
@@ -4044,7 +4687,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--autostart"])))
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            Some(vec!["--autostart"]),
+        ))
         .manage(AppState {
             networks: Mutex::new(networks),
             system: Mutex::new(system),
@@ -4056,6 +4702,7 @@ pub fn run() {
             is_widget_visible,
             get_network_latency,
             fetch_latest_release_info,
+            download_and_install_update,
             fetch_system_status,
             fetch_music_info,
             fetch_netease_music_info,
@@ -4101,14 +4748,20 @@ pub fn run() {
                 .tooltip("FlowIsland")
                 .menu(&tray_menu)
                 .on_menu_event(move |_app_handle, event| {
-                    if event.id == "quit" { std::process::exit(0); }
+                    if event.id == "quit" {
+                        std::process::exit(0);
+                    }
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { button: MouseButton::Left, .. } = event {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        ..
+                    } = event
+                    {
                         if let Some(main_window) = tray.app_handle().get_webview_window("main") {
-                            let _ = main_window.show();     
-                            let _ = main_window.unminimize(); 
-                            let _ = main_window.set_focus();  
+                            let _ = main_window.show();
+                            let _ = main_window.unminimize();
+                            let _ = main_window.set_focus();
                         }
                     }
                 })

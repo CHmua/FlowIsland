@@ -1048,12 +1048,13 @@ dependencies = [
 
 [[package]]
 name = "flow-island"
-version = "2.3.10"
+version = "2.3.12"
 dependencies = [
  "base64 0.22.1",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "sha2",
  "sysinfo",
  "tauri",
  "tauri-build",

@@ -1,0 +1,2537 @@
+<template>
+    <div class="fi-shell">
+        <header class="fi-titlebar" data-tauri-drag-region>
+            <div class="title-brand" data-tauri-drag-region>
+                <span class="brand-mark">
+                    <Sparkles :size="17" />
+                </span>
+                <strong>FlowIsland</strong>
+            </div>
+            <div class="title-status">
+                <i></i>
+                <span>{{ isWidgetVisible ? '灵动岛运行中' : '灵动岛已关闭' }}</span>
+            </div>
+            <div class="window-actions">
+                <button aria-label="最小化" @click="minimizeWindow">
+                    <Minus :size="15" />
+                </button>
+                <button aria-label="关闭" @click="closeWindow">
+                    <X :size="16" />
+                </button>
+            </div>
+        </header>
+
+        <div class="fi-body">
+            <aside class="sidebar">
+                <div class="brand-block">
+                    <div class="logo-mark">
+                        <Sparkles :size="28" />
+                    </div>
+                    <div>
+                        <h1>FlowIsland</h1>
+                        <p>v{{ appVersion }}</p>
+                    </div>
+                </div>
+
+                <nav class="nav-list">
+                    <button v-for="item in navItems" :key="item.id" class="nav-item"
+                        :class="{ 'is-active': activeSection === item.id }" @click="activeSection = item.id">
+                        <component :is="item.icon" :size="18" />
+                        <span>{{ item.label }}</span>
+                        <em v-if="item.badge">{{ item.badge }}</em>
+                    </button>
+                </nav>
+
+                <button class="update-link" :disabled="isChecking || isUpdating" @click="checkUpdate">
+                    <CloudDownload :size="16" />
+                    <span>{{ isUpdating ? `更新中 ${updateProgress}%` : (isChecking ? '检查中' : (hasNewVersion ? '发现新版本' : '检查更新')) }}</span>
+                </button>
+            </aside>
+
+            <main class="main-content">
+                <section v-show="activeSection === 'island'" class="page-layout has-preview">
+                    <div class="settings-pane">
+                        <PageHeader title="灵动岛" desc="管理桌面灵动岛的显示、行为和内容">
+                            <div class="head-toggle">
+                                <span>启用灵动岛</span>
+                                <label class="native-switch">
+                                    <input type="checkbox" :checked="isWidgetVisible" @change="toggleWidget">
+                                    <span></span>
+                                </label>
+                            </div>
+                        </PageHeader>
+
+                        <SettingGroup title="外观" eyebrow="Appearance">
+                            <div class="color-strip">
+                                <button v-for="color in accentColors" :key="color" class="swatch"
+                                    :class="{ 'is-active': color === selectedAccent }"
+                                    :style="{ '--swatch': color }" @click="selectedAccent = color"
+                                    :aria-label="`选择 ${color}`"></button>
+                                <button class="swatch custom" aria-label="自定义颜色">+</button>
+                            </div>
+                            <SettingRow title="主题模式" desc="决定灵动岛和控制台的基础明暗关系">
+                                <div class="segmented">
+                                    <button :class="{ 'is-active': islandTheme === 'black' }"
+                                        @click="islandTheme = 'black'">暗色</button>
+                                    <button :class="{ 'is-active': islandTheme === 'white' }"
+                                        @click="islandTheme = 'white'">浅色</button>
+                                    <button :class="{ 'is-active': islandTheme === 'system' }"
+                                        @click="islandTheme = 'system'">跟随系统</button>
+                                </div>
+                            </SettingRow>
+                            <SettingRow title="透明度" desc="默认 30%，音乐场景更轻盈">
+                                <RangeControl v-model="opacity" min="0" max="100" suffix="%" />
+                            </SettingRow>
+                            <SettingRow title="圆角" desc="控制胶囊圆角和展开态圆角">
+                                <RangeControl v-model="islandRadius" min="20" max="56" suffix="px" />
+                            </SettingRow>
+                            <SettingRow title="显示阴影" desc="只保留轻微柔光，不做过强外发光">
+                                <UiSwitch v-model="showIslandShadow" />
+                            </SettingRow>
+                        </SettingGroup>
+
+                        <SettingGroup title="内容" eyebrow="Content">
+                            <div class="check-grid">
+                                <label class="check-item">
+                                    <input v-model="enableMusicCtrl" type="checkbox">
+                                    <span>显示音乐</span>
+                                </label>
+                                <label class="check-item">
+                                    <input v-model="showLyrics" type="checkbox">
+                                    <span>显示歌词</span>
+                                </label>
+                                <label class="check-item">
+                                    <input v-model="enableMsgNotify" type="checkbox" @change="toggleMsgNotify">
+                                    <span>系统通知</span>
+                                </label>
+                                <label class="check-item">
+                                    <input v-model="showTaskProgress" type="checkbox">
+                                    <span>任务进度</span>
+                                </label>
+                                <label class="check-item">
+                                    <input v-model="showNetwork" type="checkbox">
+                                    <span>网速</span>
+                                </label>
+                                <label class="check-item">
+                                    <input v-model="showCpu" type="checkbox">
+                                    <span>CPU</span>
+                                </label>
+                                <label class="check-item">
+                                    <input v-model="showMemory" type="checkbox">
+                                    <span>内存</span>
+                                </label>
+                                <label class="check-item">
+                                    <input v-model="showPandaPet" type="checkbox">
+                                    <span>桌面宠物</span>
+                                </label>
+                            </div>
+                        </SettingGroup>
+
+                        <SettingGroup title="行为" eyebrow="Behavior">
+                            <SettingRow title="消息模式" desc="平时隐藏，收到消息后以岛形态弹出">
+                                <UiSwitch v-model="msgModeEnabled" @change="toggleMsgMode" />
+                            </SettingRow>
+                            <SettingRow title="鼠标悬停展开" desc="悬停封面或通知时显示快捷操作">
+                                <UiSwitch v-model="hoverExpand" />
+                            </SettingRow>
+                            <SettingRow title="点击打开详情" desc="点击音乐封面打开对应播放器">
+                                <UiSwitch v-model="clickOpenDetail" />
+                            </SettingRow>
+                            <SettingRow title="自动隐藏" desc="空闲时降低存在感">
+                                <UiSwitch v-model="autoHideIsland" />
+                            </SettingRow>
+                            <SettingRow title="始终置顶" desc="保持在桌面窗口上层">
+                                <UiSwitch v-model="alwaysOnTop" />
+                            </SettingRow>
+                            <SettingRow title="锁定位置" desc="防止误拖动">
+                                <UiSwitch v-model="pinToTaskbar" @change="togglePinTaskbar" />
+                            </SettingRow>
+                        </SettingGroup>
+
+                        <SettingGroup title="位置" eyebrow="Position">
+                            <div class="position-grid">
+                                <button class="position-card" :class="{ 'is-active': islandPosition === 'top' }"
+                                    @click="islandPosition = 'top'">
+                                    <i></i><span>顶部居中</span>
+                                </button>
+                                <button class="position-card" :class="{ 'is-active': islandPosition === 'taskbar' }"
+                                    @click="islandPosition = 'taskbar'">
+                                    <i></i><span>任务栏右侧</span>
+                                </button>
+                                <button class="position-card" :class="{ 'is-active': islandPosition === 'custom' }"
+                                    @click="islandPosition = 'custom'">
+                                    <i></i><span>自定义位置</span>
+                                </button>
+                            </div>
+                            <SettingRow title="多显示器" desc="当前显示器 1 · 1920 × 1080">
+                                <button class="secondary-btn" @click="showNotReady('多显示器选择')">选择显示器</button>
+                            </SettingRow>
+                            <SettingRow title="恢复位置" desc="将灵动岛回到默认屏幕顶部">
+                                <button class="ghost-btn" @click="showNotReady('恢复默认位置')">
+                                    <RotateCcw :size="15" />恢复默认
+                                </button>
+                            </SettingRow>
+                        </SettingGroup>
+                    </div>
+
+                    <PreviewPanel :mode="previewMode" :running="isWidgetVisible" @change="previewMode = $event" />
+                </section>
+
+                <section v-show="activeSection === 'notify'" class="page-layout single-page">
+                    <div class="settings-pane full">
+                        <PageHeader title="通知与消息" desc="控制系统通知、来源应用和消息岛弹出方式" />
+                        <div class="two-column-page">
+                            <div>
+                                <SettingGroup title="通知接收" eyebrow="Rules">
+                                    <SettingRow title="启用系统通知" desc="监听 Windows 通知中心与任务栏提醒">
+                                        <UiSwitch v-model="enableMsgNotify" @change="toggleMsgNotify" />
+                                    </SettingRow>
+                                    <SettingRow title="通知显示时长" desc="消息岛展开后保持的时间">
+                                        <RangeControl v-model="notificationDuration" min="2" max="8" suffix="s" />
+                                    </SettingRow>
+                                    <SettingRow title="隐私模式" desc="隐藏正文，仅显示来源应用">
+                                        <UiSwitch v-model="privacyMode" />
+                                    </SettingRow>
+                                    <SettingRow title="勿扰模式" desc="全屏或演示时自动降低干扰">
+                                        <UiSwitch v-model="dndMode" />
+                                    </SettingRow>
+                                </SettingGroup>
+
+                                <SettingGroup title="应用白名单" eyebrow="Sources">
+                                    <div class="app-list">
+                                        <div v-for="source in notificationSources" :key="source.name" class="app-source">
+                                            <span>{{ source.name.slice(0, 1) }}</span>
+                                            <div>
+                                                <strong>{{ source.name }}</strong>
+                                                <p>{{ source.enabled ? '允许弹出消息岛' : '仅记录，不弹出' }}</p>
+                                            </div>
+                                            <UiSwitch v-model="source.enabled" />
+                                        </div>
+                                    </div>
+                                </SettingGroup>
+                            </div>
+                            <SidePreview title="通知预览">
+                                <MockIsland mode="notify" />
+                                <p>通知岛在空闲时不常驻，收到消息后从音乐岛旁轻微展开。</p>
+                            </SidePreview>
+                        </div>
+                    </div>
+                </section>
+
+                <section v-show="activeSection === 'music'" class="page-layout single-page">
+                    <div class="settings-pane full">
+                        <PageHeader title="音乐与歌词" desc="音乐识别、歌词匹配和播放状态的实验性控制" />
+                        <div class="two-column-page">
+                            <div>
+                                <SettingGroup title="音乐识别" eyebrow="Experimental">
+                                    <SettingRow title="音乐识别" desc="检测主流音乐播放器的媒体会话">
+                                        <UiSwitch v-model="enableMusicCtrl" />
+                                    </SettingRow>
+                                    <SettingRow title="当前播放器" desc="网易云音乐 · 已识别封面和播放状态">
+                                        <button class="secondary-btn" @click="showNotReady('重新识别播放器')">重新识别</button>
+                                    </SettingRow>
+                                    <SettingRow title="浏览器视频" desc="默认关闭，避免观影时常驻显示">
+                                        <UiSwitch v-model="browserVideoEnabled" />
+                                    </SettingRow>
+                                </SettingGroup>
+
+                                <SettingGroup title="歌词" eyebrow="Lyrics">
+                                    <SettingRow title="歌词来源" desc="LRCLIB / 平台匹配 / 本地缓存">
+                                        <select v-model="lyricsSource" class="select">
+                                            <option value="auto">自动选择</option>
+                                            <option value="lrclib">LRCLIB</option>
+                                            <option value="platform">播放器平台</option>
+                                        </select>
+                                    </SettingRow>
+                                    <SettingRow title="歌词匹配状态" desc="当前歌曲已匹配，偏移可手动微调">
+                                        <span class="status-pill ok">已同步</span>
+                                    </SettingRow>
+                                    <SettingRow title="歌词样式" desc="双行显示，超长歌词横向滚动">
+                                        <div class="segmented small">
+                                            <button :class="{ 'is-active': lyricsStyle === 'double' }"
+                                                @click="lyricsStyle = 'double'">双行</button>
+                                            <button :class="{ 'is-active': lyricsStyle === 'single' }"
+                                                @click="lyricsStyle = 'single'">单行</button>
+                                        </div>
+                                    </SettingRow>
+                                    <SettingRow title="同步偏移" :desc="`当前 ${lyricOffsetMs}ms，手动快进后自动重新校准`">
+                                        <RangeControl v-model="lyricOffsetMs" min="-3000" max="3000" step="100" suffix="ms" />
+                                    </SettingRow>
+                                </SettingGroup>
+                            </div>
+                            <SidePreview title="当前歌词预览">
+                                <MockIsland mode="lyric" />
+                                <div class="lyric-stack">
+                                    <p>When the moonlight starts to fade</p>
+                                    <strong>穿过云层的缝隙</strong>
+                                    <p>落在你的掌心</p>
+                                </div>
+                            </SidePreview>
+                        </div>
+                    </div>
+                </section>
+
+                <section v-show="activeSection === 'monitor'" class="page-layout single-page">
+                    <div class="settings-pane full">
+                        <PageHeader title="系统监控" desc="选择灵动岛中需要展示的硬件与网络状态" />
+                        <div class="metric-grid">
+                            <MetricCard icon="cpu" title="CPU" value="18%" detail="58°C · 2600RPM" />
+                            <MetricCard icon="memory" title="内存" value="42%" detail="13.5 / 31.9 GB" />
+                            <MetricCard icon="gpu" title="显卡" value="12%" detail="46°C · 0RPM" />
+                            <MetricCard icon="drive" title="显存" value="8%" detail="1.2 / 16.0 GB" />
+                            <MetricCard icon="network" title="网络" :value="downloadSpeed" :detail="`上传 ${uploadSpeed}`" />
+                        </div>
+                        <SettingGroup title="监控显示" eyebrow="Display">
+                            <SettingRow title="刷新频率" desc="低频采样，减少后台占用">
+                                <select v-model="monitorRefreshRate" class="select">
+                                    <option value="2">2 秒</option>
+                                    <option value="1">1 秒</option>
+                                    <option value="5">5 秒</option>
+                                </select>
+                            </SettingRow>
+                            <SettingRow title="显示单位" desc="网络速度使用自动单位">
+                                <div class="segmented small">
+                                    <button :class="{ 'is-active': monitorUnit === 'auto' }"
+                                        @click="monitorUnit = 'auto'">自动</button>
+                                    <button :class="{ 'is-active': monitorUnit === 'kb' }"
+                                        @click="monitorUnit = 'kb'">KB/s</button>
+                                    <button :class="{ 'is-active': monitorUnit === 'mb' }"
+                                        @click="monitorUnit = 'mb'">MB/s</button>
+                                </div>
+                            </SettingRow>
+                            <SettingRow title="安全模式" desc="避免注入或读取游戏进程内存">
+                                <UiSwitch v-model="safeMonitorMode" />
+                            </SettingRow>
+                        </SettingGroup>
+                    </div>
+                </section>
+
+                <section v-show="activeSection === 'appearance'" class="page-layout single-page">
+                    <div class="settings-pane full">
+                        <PageHeader title="外观与显示" desc="控制应用主题、品牌颜色、动画和界面缩放" />
+                        <div class="two-column-page">
+                            <div>
+                                <SettingGroup title="主题" eyebrow="Theme">
+                                    <SettingRow title="应用主题" desc="控制台默认跟随系统，也可强制深浅色">
+                                        <div class="segmented">
+                                            <button :class="{ 'is-active': themeMode === 'dark' }"
+                                                @click="setThemeMode('dark')">深色</button>
+                                            <button :class="{ 'is-active': themeMode === 'light' }"
+                                                @click="setThemeMode('light')">浅色</button>
+                                            <button :class="{ 'is-active': themeMode === 'system' }"
+                                                @click="setThemeMode('system')">系统</button>
+                                        </div>
+                                    </SettingRow>
+                                    <SettingRow title="品牌颜色" desc="用于按钮、选中态和轻量强调">
+                                        <div class="color-strip compact">
+                                            <button v-for="color in accentColors.slice(0, 4)" :key="`appearance-${color}`"
+                                                class="swatch" :class="{ 'is-active': color === selectedAccent }"
+                                                :style="{ '--swatch': color }" @click="selectedAccent = color"></button>
+                                        </div>
+                                    </SettingRow>
+                                    <SettingRow title="窗口透明度" desc="只影响控制台背景，不影响文字对比">
+                                        <RangeControl v-model="consoleOpacity" min="70" max="100" suffix="%" />
+                                    </SettingRow>
+                                </SettingGroup>
+
+                                <SettingGroup title="可读性" eyebrow="Comfort">
+                                    <SettingRow title="界面缩放" desc="适配不同分辨率和显示缩放">
+                                        <RangeControl v-model="uiScale" min="85" max="115" suffix="%" />
+                                    </SettingRow>
+                                    <SettingRow title="字体大小" desc="设置项和预览文本同步调整">
+                                        <RangeControl v-model="fontScale" min="90" max="115" suffix="%" />
+                                    </SettingRow>
+                                    <SettingRow title="减少动态效果" desc="关闭不必要的过渡和弹性动画">
+                                        <UiSwitch v-model="reduceMotion" />
+                                    </SettingRow>
+                                </SettingGroup>
+                            </div>
+                            <div class="theme-preview">
+                                <span>外观预览</span>
+                                <div class="mini-window">
+                                    <i></i><i></i><i></i>
+                                    <div></div><div></div><div></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section v-show="activeSection === 'general'" class="page-layout single-page">
+                    <div class="settings-pane full">
+                        <PageHeader title="通用设置" desc="管理启动、托盘、语言和配置文件" />
+                        <SettingGroup title="启动与窗口" eyebrow="Startup">
+                            <SettingRow title="开机启动" desc="登录 Windows 后自动启动 FlowIsland">
+                                <UiSwitch v-model="autoStart" @change="toggleAutoStart" />
+                            </SettingRow>
+                            <SettingRow title="最小化到托盘" desc="关闭主窗口后保留后台运行">
+                                <UiSwitch v-model="minimizeToTray" />
+                            </SettingRow>
+                            <SettingRow title="关闭按钮行为" desc="默认隐藏到托盘">
+                                <select v-model="closeBehavior" class="select">
+                                    <option value="tray">隐藏到托盘</option>
+                                    <option value="exit">直接退出</option>
+                                </select>
+                            </SettingRow>
+                            <SettingRow title="自动检查更新" desc="每天最多检查一次新版">
+                                <UiSwitch v-model="autoCheckUpdate" />
+                            </SettingRow>
+                        </SettingGroup>
+
+                        <SettingGroup title="配置" eyebrow="Config">
+                            <SettingRow title="语言" desc="当前为简体中文">
+                                <select v-model="language" class="select">
+                                    <option value="zh-CN">简体中文</option>
+                                    <option value="en-US">English</option>
+                                </select>
+                            </SettingRow>
+                            <SettingRow title="导入配置" desc="从备份文件恢复设置">
+                                <button class="secondary-btn" @click="showNotReady('导入配置')">
+                                    <Upload :size="15" />导入
+                                </button>
+                            </SettingRow>
+                            <SettingRow title="导出配置" desc="保存当前设置到本地文件">
+                                <button class="secondary-btn" @click="showNotReady('导出配置')">
+                                    <Download :size="15" />导出
+                                </button>
+                            </SettingRow>
+                            <SettingRow title="恢复默认设置" desc="清空本地设置并恢复初始状态">
+                                <button class="danger-btn" @click="showNotReady('恢复默认设置')">恢复</button>
+                            </SettingRow>
+                        </SettingGroup>
+                    </div>
+                </section>
+
+                <section v-show="activeSection === 'about'" class="page-layout single-page">
+                    <div class="settings-pane full">
+                        <PageHeader title="关于与更新" desc="版本信息、更新入口和项目链接" />
+                        <div class="about-card">
+                            <div class="about-logo">
+                                <Sparkles :size="34" />
+                            </div>
+                            <div>
+                                <h3>FlowIsland</h3>
+                                <p>桌面灵动岛组件 · v{{ appVersion }}</p>
+                            </div>
+                            <button class="primary-btn" :disabled="isChecking || isUpdating" @click="checkUpdate">
+                                {{ isUpdating ? `更新中 ${updateProgress}%` : (isChecking ? '检查中' : '检查更新') }}
+                            </button>
+                        </div>
+                        <div class="about-grid">
+                            <button @click="showNotReady('版本说明')"><FileText :size="18" />版本说明</button>
+                            <button @click="openProjectRepo"><Github :size="18" />GitHub</button>
+                            <button @click="showNotReady('隐私说明')"><Shield :size="18" />隐私说明</button>
+                            <button @click="showNotReady('开源许可')"><Info :size="18" />开源许可</button>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        <Transition name="fade">
+            <div v-if="dialog.visible" class="modal-overlay" @click.self="closeDialog">
+                <div class="modal-card">
+                    <h3>{{ dialog.title }}</h3>
+                    <p>{{ dialog.message }}</p>
+                    <div class="modal-actions">
+                        <button v-if="dialog.isConfirm" class="secondary-btn" @click="closeDialog">取消</button>
+                        <button class="primary-btn" @click="handleDialogConfirm">确定</button>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+
+        <Transition name="fade">
+            <div v-if="updatePanelVisible" class="modal-overlay">
+                <div class="modal-card update-modal">
+                    <div class="update-modal-icon" :class="{ 'has-error': Boolean(updateError) }">
+                        <CloudDownload v-if="!updateError" :size="24" />
+                        <X v-else :size="23" />
+                    </div>
+                    <h3>{{ updateError ? '更新失败' : `正在更新到 ${updateVersion}` }}</h3>
+                    <p>{{ updateError || updateStatus }}</p>
+                    <div v-if="!updateError" class="update-progress" role="progressbar"
+                        :aria-valuenow="updateProgress" aria-valuemin="0" aria-valuemax="100">
+                        <i :style="{ width: `${updateProgress}%` }"></i>
+                    </div>
+                    <div v-if="!updateError" class="update-progress-meta">
+                        <span>{{ updateDownloadedText }}</span>
+                        <strong>{{ updateProgress }}%</strong>
+                    </div>
+                    <div v-else class="modal-actions">
+                        <button class="secondary-btn" @click="closeUpdatePanel">关闭</button>
+                        <button class="primary-btn" @click="retryUpdate">重试</button>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+    </div>
+</template>
+
+<script setup lang="ts">
+import { defineComponent, h, nextTick, onMounted, onUnmounted, PropType, ref, watch } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
+import { emit, listen } from '@tauri-apps/api/event';
+import { getVersion } from '@tauri-apps/api/app';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import {
+    Activity,
+    Bell,
+    CloudDownload,
+    Cpu,
+    Download,
+    FileText,
+    Github,
+    HardDrive,
+    Info,
+    Minus,
+    Monitor,
+    Music2,
+    Palette,
+    Play,
+    RotateCcw,
+    Settings,
+    Shield,
+    Sparkles,
+    Upload,
+    Wifi,
+    X,
+    Zap,
+} from 'lucide-vue-next';
+
+const MUSIC_ONLY_DEFAULTS_KEY = 'nsd_music_only_defaults_v3';
+if (localStorage.getItem(MUSIC_ONLY_DEFAULTS_KEY) !== 'true') {
+    localStorage.setItem('nsd_island_opacity', '30');
+    localStorage.setItem('nsd_theme_mode', 'system');
+    localStorage.setItem('nsd_island_theme', 'system');
+    localStorage.setItem('nsd_music_ctrl', 'true');
+    localStorage.setItem('nsd_hardware_mon', 'false');
+    localStorage.setItem('nsd_msg_notify', 'true');
+    localStorage.setItem('nsd_msg_mode', 'true');
+    localStorage.setItem('nsd_island_enabled', 'true');
+    localStorage.setItem(MUSIC_ONLY_DEFAULTS_KEY, 'true');
+}
+
+type NavId = 'island' | 'notify' | 'music' | 'monitor' | 'appearance' | 'general' | 'about';
+type PreviewMode = 'default' | 'music' | 'lyric' | 'notify' | 'task' | 'monitor' | 'panda';
+type PositionMode = 'top' | 'taskbar' | 'custom';
+
+const activeSection = ref<NavId>('island');
+const previewMode = ref<PreviewMode>('music');
+const isWidgetVisible = ref(false);
+const autoStart = ref(false);
+const appVersion = ref('2.3.12');
+const uploadSpeed = ref('0 B/s');
+const downloadSpeed = ref('0 B/s');
+const opacity = ref(Number(localStorage.getItem('nsd_island_opacity') || '30'));
+const lyricOffsetMs = ref(Number(localStorage.getItem('nsd_lyric_offset_ms') || '0'));
+const themeMode = ref(localStorage.getItem('nsd_theme_mode') || 'system');
+const islandTheme = ref(localStorage.getItem('nsd_island_theme') || 'system');
+const enableMusicCtrl = ref(localStorage.getItem('nsd_music_ctrl') !== 'false');
+const enableMsgNotify = ref(localStorage.getItem('nsd_msg_notify') !== 'false');
+const msgModeEnabled = ref(localStorage.getItem('nsd_msg_mode') !== 'false');
+const pinToTaskbar = ref(localStorage.getItem('nsd_pin_taskbar') === 'true');
+const isChecking = ref(false);
+const isUpdating = ref(false);
+const hasNewVersion = ref(false);
+const updatePanelVisible = ref(false);
+const updateProgress = ref(0);
+const updateStatus = ref('正在准备更新…');
+const updateVersion = ref('');
+const updateError = ref('');
+const updateDownloadedText = ref('准备下载');
+
+const selectedAccent = ref('#4C8DFF');
+const islandRadius = ref(38);
+const showIslandShadow = ref(true);
+const showLyrics = ref(true);
+const showTaskProgress = ref(true);
+const showNetwork = ref(true);
+const showCpu = ref(true);
+const showMemory = ref(true);
+const showPandaPet = ref(false);
+const hoverExpand = ref(true);
+const clickOpenDetail = ref(true);
+const autoHideIsland = ref(true);
+const alwaysOnTop = ref(true);
+const islandPosition = ref<PositionMode>('top');
+const notificationDuration = ref(5);
+const privacyMode = ref(false);
+const dndMode = ref(true);
+const browserVideoEnabled = ref(false);
+const lyricsSource = ref('auto');
+const lyricsStyle = ref<'double' | 'single'>('double');
+const monitorRefreshRate = ref('2');
+const monitorUnit = ref('auto');
+const safeMonitorMode = ref(true);
+const consoleOpacity = ref(92);
+const uiScale = ref(100);
+const fontScale = ref(100);
+const reduceMotion = ref(false);
+const minimizeToTray = ref(true);
+const closeBehavior = ref('tray');
+const autoCheckUpdate = ref(true);
+const language = ref('zh-CN');
+
+const accentColors = ['#4C8DFF', '#8B6DFF', '#45C7E8', '#F4B85A', '#4CD7A0'];
+const notificationSources = ref([
+    { name: '微信', enabled: true },
+    { name: 'QQ', enabled: true },
+    { name: '钉钉', enabled: true },
+    { name: 'Outlook', enabled: false },
+    { name: 'Telegram', enabled: false },
+]);
+
+const navItems = [
+    { id: 'island' as const, label: '灵动岛', icon: Sparkles },
+    { id: 'notify' as const, label: '通知与消息', icon: Bell },
+    { id: 'music' as const, label: '音乐与歌词', icon: Music2, badge: '实验' },
+    { id: 'monitor' as const, label: '系统监控', icon: Activity },
+    { id: 'appearance' as const, label: '外观与显示', icon: Palette },
+    { id: 'general' as const, label: '通用设置', icon: Settings },
+    { id: 'about' as const, label: '关于', icon: Info },
+];
+
+const previewModes = [
+    { id: 'default' as const, label: '默认' },
+    { id: 'music' as const, label: '音乐' },
+    { id: 'lyric' as const, label: '歌词' },
+    { id: 'notify' as const, label: '通知' },
+    { id: 'task' as const, label: '任务' },
+    { id: 'monitor' as const, label: '监控' },
+    { id: 'panda' as const, label: '熊猫' },
+];
+
+const previewLabels: Record<PreviewMode, string> = {
+    default: '默认状态',
+    music: '音乐播放中',
+    lyric: '歌词同步中',
+    notify: '通知弹出',
+    task: '任务进行中',
+    monitor: '系统监控',
+    panda: '熊猫宠物',
+};
+
+const dialog = ref({
+    visible: false,
+    title: '',
+    message: '',
+    isConfirm: false,
+    onConfirm: null as (() => void) | null,
+});
+
+let speedTimer: number | null = null;
+let lastRx = 0;
+let lastTx = 0;
+let pendingUpdate: NormalizedReleaseInfo | null = null;
+let unlistenUpdateProgress: (() => void) | null = null;
+
+const PageHeader = defineComponent({
+    props: {
+        title: { type: String, required: true },
+        desc: { type: String, required: true },
+    },
+    setup(props, { slots }) {
+        return () => h('div', { class: 'page-head' }, [
+            h('div', [h('h2', props.title), h('p', props.desc)]),
+            slots.default?.(),
+        ]);
+    },
+});
+
+const SettingGroup = defineComponent({
+    props: {
+        title: { type: String, required: true },
+        eyebrow: { type: String, required: true },
+    },
+    setup(props, { slots }) {
+        return () => h('section', { class: 'setting-group' }, [
+            h('div', { class: 'group-head' }, [h('span', props.eyebrow), h('h3', props.title)]),
+            slots.default?.(),
+        ]);
+    },
+});
+
+const SettingRow = defineComponent({
+    props: {
+        title: { type: String, required: true },
+        desc: { type: String, required: true },
+    },
+    setup(props, { slots }) {
+        return () => h('div', { class: 'setting-row' }, [
+            h('div', [h('strong', props.title), h('p', props.desc)]),
+            h('div', { class: 'row-control' }, slots.default?.()),
+        ]);
+    },
+});
+
+const UiSwitch = defineComponent({
+    props: {
+        modelValue: { type: Boolean, required: true },
+    },
+    emits: ['update:modelValue', 'change'],
+    setup(props, { emit: emitLocal }) {
+        const onChange = (event: Event) => {
+            const checked = (event.target as HTMLInputElement).checked;
+            emitLocal('update:modelValue', checked);
+            nextTick(() => emitLocal('change'));
+        };
+        return () => h('label', { class: 'ui-switch' }, [
+            h('input', { type: 'checkbox', checked: props.modelValue, onChange }),
+            h('span'),
+        ]);
+    },
+});
+
+const RangeControl = defineComponent({
+    props: {
+        modelValue: { type: Number, required: true },
+        min: { type: [String, Number], default: 0 },
+        max: { type: [String, Number], default: 100 },
+        step: { type: [String, Number], default: 1 },
+        suffix: { type: String, default: '%' },
+    },
+    emits: ['update:modelValue'],
+    setup(props, { emit: emitLocal }) {
+        const onInput = (event: Event) => {
+            emitLocal('update:modelValue', Number((event.target as HTMLInputElement).value));
+        };
+        return () => h('div', { class: 'range-control' }, [
+            h('input', {
+                type: 'range',
+                min: props.min,
+                max: props.max,
+                step: props.step,
+                value: props.modelValue,
+                onInput,
+            }),
+            h('strong', `${props.modelValue}${props.suffix}`),
+        ]);
+    },
+});
+
+const MockIsland = defineComponent({
+    props: {
+        mode: { type: String as PropType<PreviewMode>, required: true },
+    },
+    setup(props) {
+        return () => {
+            if (props.mode === 'default') {
+                return h('div', { class: 'mock-island mock-default' }, [
+                    h('span', { class: 'time-pill' }, '14:30'),
+                    h('span', { class: 'speed-pill' }, '↓ 12.4 KB/s'),
+                    h('span', { class: 'speed-pill' }, '↑ 4.1 KB/s'),
+                    h('span', { class: 'status-dot' }),
+                ]);
+            }
+            if (props.mode === 'music') {
+                return h('div', { class: 'mock-island mock-music' }, [
+                    h('span', { class: 'cover-art' }),
+                    h('div', { class: 'track-copy' }, [h('strong', 'Moon Halo'), h('small', '茶理理 / TetraCalyx')]),
+                    h('div', { class: 'progress-line' }, [h('i', { style: 'width:58%' })]),
+                    h('button', { class: 'round-play' }, [h(Play, { size: 14 })]),
+                    h(AudioWave),
+                ]);
+            }
+            if (props.mode === 'lyric') {
+                return h('div', { class: 'mock-island mock-lyric' }, [
+                    h('span', { class: 'cover-art lyric-cover' }),
+                    h('div', { class: 'lyric-copy' }, [h('strong', '穿过云层的缝隙'), h('small', '下一句：落在你的掌心')]),
+                    h('div', { class: 'progress-line' }, [h('i', { style: 'width:41%' })]),
+                    h(AudioWave),
+                ]);
+            }
+            if (props.mode === 'notify') {
+                return h('div', { class: 'mock-island mock-notify' }, [
+                    h('span', { class: 'app-dot' }, [h(Bell, { size: 15 })]),
+                    h('div', { class: 'notify-copy' }, [h('strong', '微信'), h('small', '收到一条新消息')]),
+                    h('button', { class: 'text-button' }, '查看'),
+                ]);
+            }
+            if (props.mode === 'task') {
+                return h('div', { class: 'mock-island mock-task' }, [
+                    h('span', { class: 'app-dot' }, [h(ClockIcon)]),
+                    h('div', { class: 'notify-copy' }, [h('strong', '正在同步文件'), h('small', '68% · 剩余约 2 分钟')]),
+                    h('div', { class: 'mini-meter' }, [h('i', { style: 'width:68%' })]),
+                ]);
+            }
+            if (props.mode === 'monitor') {
+                return h('div', { class: 'mock-island mock-monitor' }, [
+                    h('span', [h(Cpu, { size: 17 }), ' CPU ', h('strong', '18%')]),
+                    h('span', ['内存 ', h('strong', '42%')]),
+                    h('span', ['网络 ', h('strong', '24K/s')]),
+                ]);
+            }
+            return h('div', { class: 'mock-island mock-panda' }, [
+                h('span', { class: 'panda-face' }, [h('i'), h('b')]),
+                h('div', { class: 'notify-copy' }, [h('strong', '熊猫在休息'), h('small', '轻点唤醒桌面宠物')]),
+                h('span', { class: 'status-dot' }),
+            ]);
+        };
+    },
+});
+
+const ClockIcon = defineComponent({
+    setup() {
+        return () => h(Zap, { size: 15 });
+    },
+});
+
+const AudioWave = defineComponent({
+    setup() {
+        return () => h('span', { class: 'audio-wave' }, [1, 2, 3, 4].map((index) => h('i', { class: `bar-${index}` })));
+    },
+});
+
+const PreviewPanel = defineComponent({
+    props: {
+        mode: { type: String as PropType<PreviewMode>, required: true },
+        running: { type: Boolean, required: true },
+    },
+    emits: ['change'],
+    setup(props, { emit: emitLocal }) {
+        return () => h('aside', { class: 'preview-panel' }, [
+            h('div', { class: 'preview-head' }, [
+                h('div', [h('span', '实时预览'), h('h3', previewLabels[props.mode])]),
+                h('div', { class: 'live-dot' }, [h('i', { class: props.running ? '' : 'is-muted' }), props.running ? '运行中' : '已关闭']),
+            ]),
+            h('div', { class: 'preview-stage' }, [
+                h('div', { class: 'desktop-frame' }, [
+                    h('div', { class: 'wallpaper-glow' }),
+                    h(MockIsland, { mode: props.mode }),
+                    h('div', { class: 'taskbar-preview' }, [h('span'), h('span'), h('span'), h('strong', '14:30')]),
+                ]),
+            ]),
+            h('div', { class: 'preview-tabs' }, previewModes.map((mode) =>
+                h('button', {
+                    class: ['preview-tab', props.mode === mode.id ? 'is-active' : ''],
+                    onClick: () => emitLocal('change', mode.id),
+                }, mode.label)
+            )),
+            h('div', { class: 'preview-note' }, [
+                h(Sparkles, { size: 17 }),
+                h('p', '预览用于确认视觉和状态表现；正式功能仍由现有 Tauri 事件和系统能力驱动。'),
+            ]),
+        ]);
+    },
+});
+
+const SidePreview = defineComponent({
+    props: {
+        title: { type: String, required: true },
+    },
+    setup(props, { slots }) {
+        return () => h('aside', { class: 'side-preview-card' }, [
+            h('span', props.title),
+            slots.default?.(),
+        ]);
+    },
+});
+
+const MetricCard = defineComponent({
+    props: {
+        icon: { type: String, required: true },
+        title: { type: String, required: true },
+        value: { type: String, required: true },
+        detail: { type: String, required: true },
+    },
+    setup(props) {
+        const iconByType = () => {
+            if (props.icon === 'cpu') return h(Cpu, { size: 20 });
+            if (props.icon === 'memory') return h(HardDrive, { size: 20 });
+            if (props.icon === 'gpu') return h(Monitor, { size: 20 });
+            if (props.icon === 'network') return h(Wifi, { size: 20 });
+            return h(HardDrive, { size: 20 });
+        };
+        return () => h('article', { class: 'metric-card' }, [
+            h('div', { class: 'metric-icon' }, [iconByType()]),
+            h('div', [h('span', props.title), h('strong', props.value), h('p', props.detail)]),
+            h('svg', { viewBox: '0 0 134 82' }, [h('path', { d: 'M6,42 L30,28 L54,38 L78,24 L102,34 L126,31' })]),
+        ]);
+    },
+});
+
+const formatSpeed = (bytes: number) => {
+    if (bytes < 1024) return `${bytes.toFixed(0)} B/s`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB/s`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB/s`;
+};
+
+const fetchSpeedStats = async () => {
+    try {
+        const [currentRx, currentTx] = await invoke<[number, number]>('get_network_stats');
+        if (lastRx !== 0 && lastTx !== 0) {
+            downloadSpeed.value = formatSpeed(Math.max(0, (currentRx - lastRx) / 2));
+            uploadSpeed.value = formatSpeed(Math.max(0, (currentTx - lastTx) / 2));
+        }
+        lastRx = currentRx;
+        lastTx = currentTx;
+    } catch (error) {
+        console.error('获取网络速度失败:', error);
+    }
+};
+
+const toggleWidget = async () => {
+    const nextState = !isWidgetVisible.value;
+    await emit('control-island-visibility', { show: nextState });
+    isWidgetVisible.value = nextState;
+};
+
+const toggleAutoStart = async () => {
+    try {
+        if (autoStart.value) {
+            await enable();
+        } else {
+            await disable();
+        }
+    } catch (error) {
+        autoStart.value = !autoStart.value;
+        showDialog('设置失败', '开机自启动设置失败，请检查系统权限。');
+    }
+};
+
+const togglePinTaskbar = async () => {
+    localStorage.setItem('nsd_pin_taskbar', String(pinToTaskbar.value));
+    await emit('control-pin-taskbar', { enabled: pinToTaskbar.value });
+};
+
+const toggleMsgMode = async () => {
+    localStorage.setItem('nsd_msg_mode', String(msgModeEnabled.value));
+    await emit('control-msg-mode', { enabled: msgModeEnabled.value });
+};
+
+const toggleMsgNotify = () => {
+    localStorage.setItem('nsd_msg_notify', String(enableMsgNotify.value));
+};
+
+const setThemeMode = (mode: string) => {
+    themeMode.value = mode;
+    localStorage.setItem('nsd_theme_mode', mode);
+};
+
+const minimizeWindow = async () => {
+    await getCurrentWindow().minimize();
+};
+
+const closeWindow = async () => {
+    await getCurrentWindow().hide();
+};
+
+const showDialog = (title: string, message: string, isConfirm = false, onConfirm: (() => void) | null = null) => {
+    dialog.value = { visible: true, title, message, isConfirm, onConfirm };
+};
+
+const showNotReady = (name: string) => {
+    showDialog('功能预览', `${name} 的界面已经预留，后续可以继续接入真实功能。`);
+};
+
+const openProjectRepo = () => {
+    openUrl('https://github.com/CHmua/FlowIsland');
+};
+
+const closeDialog = () => {
+    dialog.value.visible = false;
+};
+
+const handleDialogConfirm = () => {
+    dialog.value.onConfirm?.();
+    closeDialog();
+};
+
+const parseVersion = (value: string) => {
+    const match = value.match(/\d+\.\d+\.\d+/);
+    return match ? match[0].split('.').map(Number) : [0, 0, 0];
+};
+
+type UpdateReleaseInfo = {
+    tagName?: string;
+    tag_name?: string;
+    name?: string;
+    htmlUrl?: string;
+    html_url?: string;
+    downloadUrl?: string | null;
+    download_url?: string | null;
+    assetDigest?: string | null;
+    asset_digest?: string | null;
+    assetSize?: number | null;
+    asset_size?: number | null;
+    source?: string;
+    fetchedAt?: number;
+};
+
+type NormalizedReleaseInfo = {
+    tagName: string;
+    name: string;
+    htmlUrl: string;
+    downloadUrl: string;
+    assetDigest: string | null;
+    assetSize: number | null;
+    source: string;
+    fetchedAt: number;
+};
+
+const UPDATE_CACHE_KEY = 'flowisland_update_cache_v1';
+const UPDATE_CACHE_TTL_MS = 5 * 60 * 1000;
+const UPDATE_FALLBACK_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+const compareVersions = (remote: number[], local: number[]) => {
+    for (let index = 0; index < Math.max(remote.length, local.length); index += 1) {
+        const remotePart = remote[index] || 0;
+        const localPart = local[index] || 0;
+        if (remotePart > localPart) return 1;
+        if (remotePart < localPart) return -1;
+    }
+    return 0;
+};
+
+const normalizeReleaseInfo = (raw: UpdateReleaseInfo | null | undefined): NormalizedReleaseInfo | null => {
+    if (!raw) return null;
+    const tagName = raw.tagName || raw.tag_name || raw.name || '';
+    if (!tagName.trim()) return null;
+    return {
+        tagName,
+        name: raw.name || tagName,
+        htmlUrl: raw.htmlUrl || raw.html_url || 'https://github.com/CHmua/FlowIsland/releases/latest',
+        downloadUrl: raw.downloadUrl || raw.download_url || '',
+        assetDigest: raw.assetDigest || raw.asset_digest || null,
+        assetSize: raw.assetSize || raw.asset_size || null,
+        source: raw.source || 'unknown',
+        fetchedAt: raw.fetchedAt || Date.now(),
+    };
+};
+
+const readCachedReleaseInfo = (maxAgeMs: number) => {
+    try {
+        const cached = normalizeReleaseInfo(JSON.parse(localStorage.getItem(UPDATE_CACHE_KEY) || 'null'));
+        if (!cached) return null;
+        return Date.now() - cached.fetchedAt <= maxAgeMs ? cached : null;
+    } catch {
+        return null;
+    }
+};
+
+const writeCachedReleaseInfo = (release: NormalizedReleaseInfo) => {
+    localStorage.setItem(UPDATE_CACHE_KEY, JSON.stringify({ ...release, fetchedAt: Date.now() }));
+};
+
+const formatCacheAge = (fetchedAt: number) => {
+    const minutes = Math.max(0, Math.round((Date.now() - fetchedAt) / 60000));
+    if (minutes <= 0) return '刚刚';
+    if (minutes < 60) return `${minutes} 分钟前`;
+    return `${Math.round(minutes / 60)} 小时前`;
+};
+
+type UpdateProgressPayload = {
+    status: string;
+    downloaded: number;
+    total?: number | null;
+    percent: number;
+};
+
+const formatBytes = (bytes: number) => {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '准备下载';
+    if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+};
+
+const startUpdate = async (release: NormalizedReleaseInfo) => {
+    if (isUpdating.value) return;
+    if (!release.downloadUrl) {
+        showDialog('暂时无法更新', '新版本尚未上传 Windows 安装包，请稍后再试。');
+        return;
+    }
+
+    pendingUpdate = release;
+    isUpdating.value = true;
+    updatePanelVisible.value = true;
+    updateProgress.value = 0;
+    updateStatus.value = '正在连接 GitHub…';
+    updateVersion.value = release.tagName;
+    updateError.value = '';
+    updateDownloadedText.value = '准备下载';
+
+    try {
+        await invoke('download_and_install_update', {
+            downloadUrl: release.downloadUrl,
+            version: release.tagName,
+            expectedDigest: release.assetDigest,
+            expectedSize: release.assetSize,
+        });
+    } catch (error) {
+        isUpdating.value = false;
+        updateError.value = error instanceof Error ? error.message : String(error || '无法下载或安装更新。');
+    }
+};
+
+const retryUpdate = () => {
+    if (pendingUpdate) void startUpdate(pendingUpdate);
+};
+
+const closeUpdatePanel = () => {
+    if (isUpdating.value) return;
+    updatePanelVisible.value = false;
+    updateError.value = '';
+};
+
+const showUpdateResult = (release: NormalizedReleaseInfo, fromCache = false, prefix = '') => {
+    const local = parseVersion(appVersion.value);
+    const remote = parseVersion(release.tagName || release.name || '');
+    const hasUpdate = compareVersions(remote, local) > 0;
+    hasNewVersion.value = hasUpdate;
+    const cacheText = fromCache ? `\n\n结果来自 ${formatCacheAge(release.fetchedAt)} 的本地缓存。` : '';
+    const sourceText = release.source === 'github-page' ? '\n\n已使用 GitHub Releases 页面兜底检查。' : '';
+    if (hasUpdate) {
+        showDialog(
+            '发现新版本',
+            `${prefix}检测到新版本 ${release.tagName}。\n\n点击“确定”后将在软件内下载并自动安装，安装时 FlowIsland 会短暂退出。${sourceText}${cacheText}`,
+            true,
+            () => {
+                void startUpdate(release);
+            }
+        );
+        return;
+    }
+
+    showDialog('已是最新版本', `${prefix}当前已经是最新版本。${sourceText}${cacheText}`);
+};
+
+const checkUpdate = async () => {
+    if (isChecking.value || isUpdating.value) return;
+    const freshCache = readCachedReleaseInfo(UPDATE_CACHE_TTL_MS);
+    if (freshCache) {
+        showUpdateResult(freshCache, true);
+        return;
+    }
+
+    isChecking.value = true;
+    try {
+        const release = normalizeReleaseInfo(await invoke<UpdateReleaseInfo>('fetch_latest_release_info'));
+        if (!release) throw new Error('更新源没有返回有效版本号。');
+        writeCachedReleaseInfo(release);
+        showUpdateResult(release);
+    } catch (error) {
+        const fallbackCache = readCachedReleaseInfo(UPDATE_FALLBACK_CACHE_TTL_MS);
+        if (fallbackCache) {
+            showUpdateResult(
+                fallbackCache,
+                true,
+                '暂时无法连接 GitHub，已使用最近一次缓存结果。\n\n'
+            );
+        } else {
+            showDialog('检查失败', error instanceof Error ? error.message : '无法检查更新，请稍后再试。');
+        }
+    } finally {
+        isChecking.value = false;
+    }
+};
+
+watch(opacity, async (value) => {
+    const next = Math.max(0, Math.min(100, Number(value) || 0));
+    if (next !== value) {
+        opacity.value = next;
+        return;
+    }
+    localStorage.setItem('nsd_island_opacity', String(next));
+    await emit('control-island-opacity', { opacity: next });
+});
+
+watch(lyricOffsetMs, async (value) => {
+    const next = Math.max(-3000, Math.min(3000, Number(value) || 0));
+    if (next !== value) {
+        lyricOffsetMs.value = next;
+        return;
+    }
+    localStorage.setItem('nsd_lyric_offset_ms', String(next));
+    await emit('control-lyric-offset', { offsetMs: next });
+});
+
+watch(islandTheme, async (value) => {
+    localStorage.setItem('nsd_island_theme', value);
+    await emit('control-island-theme', { theme: value });
+});
+
+watch(enableMusicCtrl, async (value) => {
+    localStorage.setItem('nsd_music_ctrl', String(value));
+    await emit('control-music-ctl', { enabled: value });
+});
+
+onMounted(async () => {
+    try {
+        appVersion.value = await getVersion();
+    } catch { /* ignore */ }
+
+    try {
+        autoStart.value = await isEnabled();
+    } catch { /* ignore */ }
+
+    await fetchSpeedStats();
+    speedTimer = window.setInterval(fetchSpeedStats, 2000);
+
+    try {
+        await listen('open-settings-panel', async () => {
+            activeSection.value = 'island';
+            const win = getCurrentWindow();
+            await win.show();
+            await win.unminimize();
+            await win.setFocus();
+        });
+
+        await listen<{ visible: boolean }>('island-status-sync', (event) => {
+            isWidgetVisible.value = event.payload.visible;
+        });
+
+        unlistenUpdateProgress = await listen<UpdateProgressPayload>('update-download-progress', (event) => {
+            const progress = event.payload;
+            updatePanelVisible.value = true;
+            updateStatus.value = progress.status;
+            updateProgress.value = Math.max(0, Math.min(100, Math.round(progress.percent || 0)));
+            const downloaded = formatBytes(progress.downloaded || 0);
+            updateDownloadedText.value = progress.total
+                ? `${downloaded} / ${formatBytes(progress.total)}`
+                : downloaded;
+        });
+    } catch {
+        // Browser-only preview does not provide the Tauri event bridge.
+    }
+
+    for (let i = 0; i < 6; i += 1) {
+        try {
+            const visible = await invoke<boolean>('is_widget_visible');
+            if (visible) {
+                isWidgetVisible.value = true;
+                return;
+            }
+        } catch { /* ignore */ }
+        await new Promise((resolve) => setTimeout(resolve, 180));
+    }
+});
+
+onUnmounted(() => {
+    if (speedTimer != null) {
+        window.clearInterval(speedTimer);
+    }
+    unlistenUpdateProgress?.();
+    unlistenUpdateProgress = null;
+});
+</script>
+
+<style>
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+:global(html),
+:global(body),
+:global(#app) {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: transparent;
+}
+
+:global(body) {
+    font-family: "Microsoft YaHei UI", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+    color: #f5f7fa;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select {
+    font: inherit;
+}
+
+button {
+    border: 0;
+    cursor: pointer;
+}
+
+.fi-shell {
+    width: 100%;
+    height: 100vh;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 20% 8%, rgba(76, 141, 255, 0.16), transparent 28%),
+        radial-gradient(circle at 82% 15%, rgba(69, 199, 232, 0.10), transparent 30%),
+        linear-gradient(145deg, #0c111b, #0a0f17 62%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #f5f7fa;
+}
+
+.fi-titlebar {
+    height: 44px;
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    padding: 0 14px 0 18px;
+    background: rgba(13, 18, 28, 0.86);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.title-brand,
+.title-status,
+.window-actions,
+.brand-block,
+.nav-item,
+.update-link,
+.head-toggle,
+.setting-row,
+.color-strip,
+.check-item,
+.preview-head,
+.live-dot,
+.preview-tabs,
+.preview-note,
+.app-source,
+.about-card,
+.about-grid button,
+.ghost-btn,
+.secondary-btn {
+    display: flex;
+    align-items: center;
+}
+
+.title-brand {
+    gap: 9px;
+    color: #eef4ff;
+    font-size: 13px;
+}
+
+.brand-mark,
+.logo-mark {
+    display: grid;
+    place-items: center;
+    color: #6cb7ff;
+    background: linear-gradient(180deg, rgba(76, 141, 255, 0.18), rgba(69, 199, 232, 0.06));
+    border: 1px solid rgba(76, 141, 255, 0.28);
+}
+
+.brand-mark {
+    width: 26px;
+    height: 26px;
+    border-radius: 9px;
+}
+
+.title-status {
+    gap: 7px;
+    color: #9fb0c8;
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(76, 141, 255, 0.08);
+}
+
+.title-status i,
+.live-dot i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #4cd7a0;
+    box-shadow: 0 0 12px rgba(76, 215, 160, 0.55);
+}
+
+.live-dot i.is-muted,
+.title-status:has(span:first-child:last-child) i {
+    background: #67758a;
+    box-shadow: none;
+}
+
+.window-actions {
+    gap: 8px;
+    margin-left: 18px;
+}
+
+.window-actions button {
+    width: 30px;
+    height: 24px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    color: #91a0b8;
+    background: transparent;
+}
+
+.window-actions button:hover {
+    color: #f5f7fa;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.window-actions button:last-child:hover {
+    background: rgba(240, 107, 114, 0.78);
+}
+
+.fi-body {
+    height: calc(100% - 44px);
+    display: grid;
+    grid-template-columns: 190px minmax(0, 1fr);
+}
+
+.sidebar {
+    min-width: 0;
+    background: linear-gradient(180deg, #0e1420, #0b111b);
+    border-right: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 18px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.brand-block {
+    gap: 12px;
+    padding: 8px 6px 14px;
+}
+
+.logo-mark {
+    width: 46px;
+    height: 46px;
+    border-radius: 15px;
+    flex: 0 0 auto;
+}
+
+.brand-block h1 {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.1;
+    font-weight: 650;
+}
+
+.brand-block p {
+    margin: 4px 0 0;
+    color: #6fa9ff;
+    font-size: 11px;
+}
+
+.nav-list {
+    display: grid;
+    gap: 5px;
+}
+
+.nav-item {
+    width: 100%;
+    height: 38px;
+    gap: 10px;
+    padding: 0 10px;
+    color: #9aa8bc;
+    background: transparent;
+    border-radius: 11px;
+    text-align: left;
+    position: relative;
+}
+
+.nav-item span {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.nav-item em {
+    font-style: normal;
+    color: #f4b85a;
+    border: 1px solid rgba(244, 184, 90, 0.35);
+    border-radius: 7px;
+    padding: 1px 5px;
+    font-size: 10px;
+}
+
+.nav-item:hover {
+    color: #eef4ff;
+    background: rgba(76, 141, 255, 0.08);
+}
+
+.nav-item.is-active {
+    color: #f5f7fa;
+    background: rgba(76, 141, 255, 0.16);
+}
+
+.nav-item.is-active::before {
+    content: "";
+    width: 4px;
+    height: 18px;
+    border-radius: 999px;
+    background: #4c8dff;
+    position: absolute;
+    left: -3px;
+}
+
+.update-link {
+    gap: 8px;
+    margin-top: auto;
+    height: 36px;
+    border-radius: 11px;
+    justify-content: center;
+    color: #b9c7d9;
+    background: rgba(255, 255, 255, 0.045);
+}
+
+.update-link:hover {
+    color: #f5f7fa;
+    background: rgba(76, 141, 255, 0.12);
+}
+
+.main-content {
+    min-width: 0;
+    overflow: hidden;
+    padding: 22px 24px 24px;
+}
+
+.page-layout {
+    height: 100%;
+    min-height: 0;
+}
+
+.page-layout.has-preview {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 22px;
+}
+
+.single-page {
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.settings-pane {
+    min-width: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.settings-pane.full {
+    max-width: 100%;
+}
+
+.settings-pane::-webkit-scrollbar,
+.single-page::-webkit-scrollbar {
+    width: 6px;
+}
+
+.settings-pane::-webkit-scrollbar-thumb,
+.single-page::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(154, 168, 188, 0.24);
+}
+
+.page-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 18px;
+    margin-bottom: 18px;
+}
+
+.page-head h2 {
+    margin: 0;
+    font-size: 24px;
+    line-height: 1.2;
+    font-weight: 650;
+    letter-spacing: 0;
+}
+
+.page-head p {
+    margin: 7px 0 0;
+    color: #9aa8bc;
+    font-size: 12px;
+}
+
+.head-toggle {
+    gap: 10px;
+    flex: 0 0 auto;
+    color: #b9c7d9;
+    font-size: 13px;
+    background: rgba(76, 141, 255, 0.09);
+    border-radius: 12px;
+    padding: 8px 10px 8px 12px;
+}
+
+.setting-group {
+    background: #121a28;
+    border-radius: 16px;
+    margin-bottom: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.group-head {
+    padding: 15px 18px 8px;
+}
+
+.group-head span {
+    display: block;
+    color: #4c8dff;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.group-head h3 {
+    margin: 4px 0 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.setting-row {
+    min-height: 64px;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.setting-row > div:first-child {
+    min-width: 0;
+}
+
+.setting-row strong {
+    display: block;
+    color: #eef4ff;
+    font-size: 14px;
+    font-weight: 550;
+}
+
+.setting-row p {
+    margin: 5px 0 0;
+    color: #8392a7;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.row-control {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.ui-switch,
+.native-switch {
+    width: 42px;
+    height: 24px;
+    padding: 3px;
+    border-radius: 999px;
+    background: #334052;
+    flex: 0 0 auto;
+    transition: background 0.2s ease;
+    display: inline-block;
+}
+
+.ui-switch input,
+.native-switch input {
+    width: 0;
+    height: 0;
+    opacity: 0;
+    position: absolute;
+}
+
+.ui-switch span,
+.native-switch span {
+    display: block;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #e9edf3;
+    transition: transform 0.2s ease;
+}
+
+.ui-switch:has(input:checked),
+.native-switch:has(input:checked) {
+    background: #2f73f6;
+}
+
+.ui-switch input:checked + span,
+.native-switch input:checked + span {
+    transform: translateX(18px);
+}
+
+.segmented {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 12px;
+    background: #172131;
+    flex: 0 0 auto;
+}
+
+.segmented.small {
+    border-radius: 10px;
+}
+
+.segmented button,
+.preview-tab {
+    height: 30px;
+    padding: 0 14px;
+    border-radius: 9px;
+    color: #9aa8bc;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 550;
+}
+
+.segmented button.is-active,
+.preview-tab.is-active {
+    color: #f5f7fa;
+    background: #2f73f6;
+}
+
+.color-strip {
+    gap: 10px;
+    padding: 8px 18px 14px;
+}
+
+.color-strip.compact {
+    padding: 0;
+}
+
+.swatch {
+    width: 28px;
+    height: 28px;
+    border-radius: 10px;
+    background: var(--swatch);
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.14);
+    position: relative;
+}
+
+.swatch.is-active::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 13px;
+    border: 2px solid rgba(76, 141, 255, 0.65);
+}
+
+.swatch.custom {
+    color: #d6e3f4;
+    background: #172131;
+    font-size: 18px;
+}
+
+.range-control {
+    width: 188px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 58px;
+    align-items: center;
+    gap: 10px;
+}
+
+.range-control input {
+    width: 100%;
+    accent-color: #4c8dff;
+}
+
+.range-control strong {
+    color: #d6e3f4;
+    font-size: 12px;
+    text-align: right;
+}
+
+.check-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px 18px 18px;
+}
+
+.check-item {
+    gap: 8px;
+    height: 34px;
+    color: #c7d3e2;
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.035);
+    border-radius: 10px;
+    padding: 0 10px;
+}
+
+.check-item input {
+    accent-color: #4c8dff;
+}
+
+.position-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 9px;
+    padding: 10px 18px 4px;
+}
+
+.position-card {
+    height: 74px;
+    border-radius: 12px;
+    color: #aebbd0;
+    background: #172131;
+    display: grid;
+    place-items: center;
+    gap: 6px;
+    font-size: 12px;
+}
+
+.position-card i {
+    width: 52px;
+    height: 30px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 7px;
+    position: relative;
+}
+
+.position-card i::before {
+    content: "";
+    position: absolute;
+    top: 5px;
+    left: 19px;
+    width: 14px;
+    height: 4px;
+    border-radius: 999px;
+    background: #4c8dff;
+}
+
+.position-card.is-active {
+    color: #f5f7fa;
+    background: rgba(76, 141, 255, 0.16);
+}
+
+.secondary-btn,
+.ghost-btn,
+.primary-btn,
+.danger-btn,
+.text-button {
+    min-height: 32px;
+    padding: 0 14px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 550;
+    gap: 7px;
+}
+
+.secondary-btn {
+    color: #dbe8fb;
+    background: #1c283a;
+}
+
+.ghost-btn {
+    color: #9fb0c8;
+    background: transparent;
+}
+
+.primary-btn {
+    color: #fff;
+    background: #2f73f6;
+}
+
+.danger-btn {
+    color: #fff;
+    background: rgba(240, 107, 114, 0.82);
+}
+
+.text-button {
+    color: #8fc1ff;
+    background: rgba(76, 141, 255, 0.1);
+}
+
+.select {
+    height: 32px;
+    border: 0;
+    border-radius: 10px;
+    color: #d6e3f4;
+    background: #1c283a;
+    padding: 0 32px 0 12px;
+}
+
+.preview-panel {
+    height: 100%;
+    background: linear-gradient(180deg, #121a28, #0f1724);
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.055);
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.preview-head {
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.preview-head span,
+.side-preview-card > span,
+.theme-preview > span {
+    color: #7f8da3;
+    font-size: 12px;
+}
+
+.preview-head h3 {
+    margin: 5px 0 0;
+    font-size: 18px;
+    font-weight: 650;
+}
+
+.live-dot {
+    gap: 7px;
+    color: #9fb0c8;
+    font-size: 12px;
+}
+
+.preview-stage {
+    flex: 1;
+    min-height: 260px;
+}
+
+.desktop-frame {
+    height: 100%;
+    min-height: 292px;
+    border-radius: 16px;
+    overflow: hidden;
+    position: relative;
+    background:
+        linear-gradient(160deg, rgba(76, 141, 255, 0.24), transparent 42%),
+        linear-gradient(25deg, rgba(69, 199, 232, 0.10), transparent 50%),
+        #07101d;
+}
+
+.wallpaper-glow {
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(circle at 56% 32%, rgba(76, 141, 255, 0.30), transparent 34%),
+        radial-gradient(circle at 35% 70%, rgba(69, 199, 232, 0.14), transparent 28%);
+    filter: blur(10px);
+}
+
+.taskbar-preview {
+    position: absolute;
+    left: 18px;
+    right: 18px;
+    bottom: 18px;
+    height: 48px;
+    border-radius: 15px;
+    background: rgba(11, 15, 23, 0.78);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 14px;
+    backdrop-filter: blur(18px);
+}
+
+.taskbar-preview span {
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.taskbar-preview strong {
+    margin-left: auto;
+    color: #dce8f8;
+    font-size: 12px;
+}
+
+.mock-island {
+    position: absolute;
+    left: 50%;
+    top: 52px;
+    transform: translateX(-50%);
+    min-height: 38px;
+    border-radius: 999px;
+    padding: 5px 9px;
+    background:
+        linear-gradient(90deg, rgba(76, 141, 255, 0.24), rgba(69, 199, 232, 0.16), rgba(244, 184, 90, 0.16)),
+        rgba(12, 16, 24, 0.72);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08), 0 12px 30px rgba(0, 0, 0, 0.22);
+    backdrop-filter: blur(18px);
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    z-index: 2;
+    white-space: nowrap;
+}
+
+.mock-default {
+    width: 246px;
+    justify-content: center;
+}
+
+.mock-music,
+.mock-lyric {
+    width: 286px;
+}
+
+.mock-notify,
+.mock-task,
+.mock-panda {
+    width: 276px;
+}
+
+.mock-monitor {
+    width: 330px;
+    justify-content: space-around;
+    font-size: 12px;
+    color: #d9e4f4;
+}
+
+.mock-monitor span {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.mock-monitor strong {
+    color: #fff;
+    font-size: 13px;
+}
+
+.time-pill,
+.speed-pill {
+    color: #f3f7ff;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.speed-pill {
+    color: #c8d4e5;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4cd7a0;
+}
+
+.cover-art,
+.app-dot,
+.panda-face {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+}
+
+.cover-art {
+    background:
+        radial-gradient(circle at 36% 35%, #fff, transparent 18%),
+        linear-gradient(135deg, #84d8ff, #4c8dff 48%, #1c2e54);
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.78);
+}
+
+.lyric-cover {
+    background:
+        radial-gradient(circle at 42% 42%, #fff, transparent 16%),
+        linear-gradient(135deg, #f4b85a, #8b6dff 46%, #2f153f);
+}
+
+.track-copy,
+.lyric-copy,
+.notify-copy {
+    min-width: 0;
+    flex: 1;
+}
+
+.track-copy strong,
+.lyric-copy strong,
+.notify-copy strong {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #fff;
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.track-copy small,
+.lyric-copy small,
+.notify-copy small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #aebbd0;
+    font-size: 10px;
+    margin-top: 1px;
+}
+
+.progress-line {
+    position: absolute;
+    left: 48px;
+    right: 54px;
+    bottom: 3px;
+    height: 2px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.progress-line i,
+.mini-meter i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #45c7e8;
+}
+
+.round-play {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    color: #f6fbff;
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.audio-wave {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    width: 18px;
+}
+
+.audio-wave i {
+    width: 2px;
+    border-radius: 999px;
+    background: #45c7e8;
+    animation: wave 0.9s ease-in-out infinite;
+}
+
+.audio-wave .bar-1 { height: 7px; animation-delay: 0s; }
+.audio-wave .bar-2 { height: 14px; animation-delay: 0.12s; }
+.audio-wave .bar-3 { height: 10px; animation-delay: 0.24s; }
+.audio-wave .bar-4 { height: 16px; animation-delay: 0.36s; }
+
+.app-dot {
+    display: grid;
+    place-items: center;
+    color: #d8ecff;
+    background: rgba(76, 141, 255, 0.20);
+}
+
+.mini-meter {
+    width: 52px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+}
+
+.panda-face {
+    position: relative;
+    background: #f6fbff;
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.5);
+}
+
+.panda-face::before,
+.panda-face::after {
+    content: "";
+    position: absolute;
+    top: 4px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #182235;
+}
+
+.panda-face::before { left: 4px; }
+.panda-face::after { right: 4px; }
+
+.panda-face i,
+.panda-face b {
+    position: absolute;
+    top: -3px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #182235;
+}
+
+.panda-face i { left: 1px; }
+.panda-face b { right: 1px; }
+
+.preview-tabs {
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.preview-tab {
+    background: #172131;
+    padding: 0 11px;
+}
+
+.preview-note {
+    gap: 9px;
+    align-items: flex-start;
+    padding: 12px;
+    border-radius: 14px;
+    color: #78b5ff;
+    background: rgba(76, 141, 255, 0.08);
+}
+
+.preview-note p {
+    margin: 0;
+    color: #9aa8bc;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.two-column-page {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 290px;
+    gap: 18px;
+}
+
+.side-preview-card,
+.theme-preview {
+    min-height: 240px;
+    background: #121a28;
+    border-radius: 16px;
+    padding: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.side-preview-card {
+    position: relative;
+    overflow: hidden;
+}
+
+.side-preview-card .mock-island {
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: none;
+    margin: 24px 0 20px;
+    width: 100%;
+    max-width: 100%;
+}
+
+.side-preview-card p {
+    color: #9aa8bc;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.app-list {
+    padding: 4px 0 8px;
+}
+
+.app-source {
+    gap: 12px;
+    padding: 11px 18px;
+    border-top: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.app-source > span {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: #172131;
+    display: grid;
+    place-items: center;
+    color: #9ec8ff;
+    font-weight: 700;
+}
+
+.app-source div {
+    flex: 1;
+}
+
+.app-source strong {
+    display: block;
+    font-size: 13px;
+}
+
+.app-source p,
+.lyric-stack p {
+    margin: 3px 0 0;
+    color: #8392a7;
+    font-size: 11px;
+}
+
+.status-pill {
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 650;
+}
+
+.status-pill.ok {
+    color: #7ff0bd;
+    background: rgba(76, 215, 160, 0.12);
+}
+
+.lyric-stack {
+    display: grid;
+    gap: 10px;
+    padding-top: 8px;
+}
+
+.lyric-stack strong {
+    color: #fff;
+    font-size: 16px;
+}
+
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.metric-card {
+    min-height: 132px;
+    border-radius: 16px;
+    padding: 16px;
+    background: #121a28;
+    border: 1px solid rgba(255, 255, 255, 0.045);
+    overflow: hidden;
+    position: relative;
+}
+
+.metric-icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    display: grid;
+    place-items: center;
+    color: #8fc1ff;
+    background: rgba(76, 141, 255, 0.12);
+    margin-bottom: 8px;
+}
+
+.metric-card span {
+    color: #9aa8bc;
+    font-size: 12px;
+}
+
+.metric-card strong {
+    display: block;
+    margin-top: 6px;
+    font-size: 22px;
+    font-weight: 650;
+}
+
+.metric-card p {
+    margin: 4px 0 0;
+    color: #8392a7;
+    font-size: 11px;
+}
+
+.metric-card svg {
+    width: 134px;
+    height: 52px;
+    position: absolute;
+    right: 14px;
+    bottom: 10px;
+}
+
+.metric-card path {
+    fill: none;
+    stroke: #45c7e8;
+    stroke-width: 3;
+    stroke-linecap: round;
+}
+
+.theme-preview {
+    display: grid;
+    align-content: start;
+    gap: 18px;
+}
+
+.mini-window {
+    height: 250px;
+    border-radius: 16px;
+    background: linear-gradient(145deg, #0d1524, #141f31);
+    padding: 18px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+
+.mini-window i {
+    height: 76px;
+    border-radius: 14px;
+    background: rgba(76, 141, 255, 0.14);
+}
+
+.mini-window div {
+    grid-column: span 3;
+    height: 26px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.about-card {
+    gap: 16px;
+    padding: 20px;
+    border-radius: 18px;
+    background: #121a28;
+    border: 1px solid rgba(255, 255, 255, 0.045);
+    margin-bottom: 14px;
+}
+
+.about-logo {
+    width: 62px;
+    height: 62px;
+    border-radius: 18px;
+    display: grid;
+    place-items: center;
+    color: #8fc1ff;
+    background: linear-gradient(180deg, rgba(76, 141, 255, 0.20), rgba(69, 199, 232, 0.06));
+}
+
+.about-card h3 {
+    margin: 0;
+    font-size: 22px;
+}
+
+.about-card p {
+    margin: 5px 0 0;
+    color: #9aa8bc;
+}
+
+.about-card .primary-btn {
+    margin-left: auto;
+}
+
+.about-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+}
+
+.about-grid button {
+    justify-content: center;
+    gap: 8px;
+    height: 74px;
+    border-radius: 14px;
+    color: #dbe8fb;
+    background: #121a28;
+    border: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(2, 6, 23, 0.66);
+    backdrop-filter: blur(8px);
+}
+
+.modal-card {
+    width: 360px;
+    padding: 24px;
+    border-radius: 20px;
+    border: 1px solid rgba(109, 137, 183, 0.24);
+    background: #0c1423;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+}
+
+.modal-card h3 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.modal-card p {
+    margin: 14px 0 0;
+    color: rgba(203, 213, 225, 0.78);
+    line-height: 1.6;
+    white-space: pre-line;
+}
+
+.modal-actions {
+    margin-top: 22px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+}
+
+.update-modal {
+    width: 390px;
+    text-align: center;
+}
+
+.update-modal-icon {
+    width: 52px;
+    height: 52px;
+    margin: 0 auto 15px;
+    border-radius: 16px;
+    display: grid;
+    place-items: center;
+    color: #b8d7ff;
+    background: rgba(76, 141, 255, 0.16);
+    box-shadow: inset 0 0 0 1px rgba(112, 166, 255, 0.24);
+}
+
+.update-modal-icon.has-error {
+    color: #ffb4b4;
+    background: rgba(239, 92, 92, 0.14);
+    box-shadow: inset 0 0 0 1px rgba(239, 92, 92, 0.22);
+}
+
+.update-progress {
+    height: 7px;
+    margin-top: 20px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.update-progress i {
+    display: block;
+    height: 100%;
+    min-width: 3px;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #3f7fff, #53c8ff);
+    box-shadow: 0 0 14px rgba(76, 141, 255, 0.42);
+    transition: width 0.18s ease;
+}
+
+.update-progress-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 9px;
+    color: #8392a7;
+    font-size: 11px;
+}
+
+.update-progress-meta strong {
+    color: #a9caff;
+    font-weight: 650;
+}
+
+.update-modal .modal-actions {
+    justify-content: center;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+    transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+    opacity: 0;
+}
+
+@keyframes wave {
+    0%, 100% { transform: scaleY(0.6); opacity: 0.72; }
+    50% { transform: scaleY(1); opacity: 1; }
+}
+
+@media (max-width: 920px) {
+    .fi-body {
+        grid-template-columns: 178px minmax(0, 1fr);
+    }
+
+    .page-layout.has-preview,
+    .two-column-page {
+        grid-template-columns: 1fr;
+    }
+
+    .preview-panel {
+        min-height: 430px;
+    }
+}
+</style>

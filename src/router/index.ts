@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import MainPanel from '../views/MainPanelModern.vue'
+import MainPanel from '../views/MainPanelRedesign.vue'
 import WidgetIsland from '../views/WidgetIsland.vue'
 
 const router = createRouter({
