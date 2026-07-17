@@ -2520,6 +2520,392 @@ button {
     50% { transform: scaleY(1); opacity: 1; }
 }
 
+/* System-aware console palette. Layout and component behavior stay unchanged. */
+.fi-shell {
+    color-scheme: dark;
+    --fi-bg: #111315;
+    --fi-chrome: #151719;
+    --fi-sidebar: #141618;
+    --fi-surface: #1b1e21;
+    --fi-surface-raised: #22262a;
+    --fi-surface-soft: #2b3036;
+    --fi-border: rgba(255, 255, 255, 0.08);
+    --fi-border-strong: rgba(255, 255, 255, 0.13);
+    --fi-text: #f4f5f6;
+    --fi-text-soft: #c9cdd2;
+    --fi-muted: #9299a2;
+    --fi-faint: #747c86;
+    --fi-accent: #6b93d6;
+    --fi-accent-strong: #4f7fc9;
+    --fi-accent-soft: rgba(107, 147, 214, 0.15);
+    --fi-accent-faint: rgba(107, 147, 214, 0.08);
+    --fi-success: #4fc58a;
+    --fi-warning: #d5a95f;
+    --fi-danger: #d66b70;
+    --fi-control: #353b42;
+    --fi-thumb: #f4f5f6;
+    --fi-glass: rgba(20, 22, 25, 0.84);
+    --fi-preview: #171a1e;
+    --fi-shadow: rgba(0, 0, 0, 0.28);
+    background: var(--fi-bg);
+    border-color: var(--fi-border-strong);
+    color: var(--fi-text);
+}
+
+.fi-titlebar {
+    background: var(--fi-chrome);
+    border-bottom-color: var(--fi-border);
+}
+
+.sidebar {
+    background: var(--fi-sidebar);
+    border-right-color: var(--fi-border);
+}
+
+.title-brand,
+.brand-block h1,
+.page-head h2,
+.group-head h3,
+.setting-row strong,
+.preview-head h3,
+.track-copy strong,
+.lyric-copy strong,
+.notify-copy strong,
+.lyric-stack strong,
+.metric-card strong,
+.about-card h3,
+.modal-card h3 {
+    color: var(--fi-text);
+}
+
+.time-pill,
+.mock-monitor strong,
+.round-play {
+    color: var(--fi-text);
+}
+
+.title-status,
+.page-head p,
+.setting-row p,
+.preview-head span,
+.side-preview-card > span,
+.theme-preview > span,
+.live-dot,
+.preview-note p,
+.side-preview-card p,
+.app-source p,
+.lyric-stack p,
+.metric-card span,
+.metric-card p,
+.about-card p,
+.update-progress-meta {
+    color: var(--fi-muted);
+}
+
+.track-copy small,
+.lyric-copy small,
+.notify-copy small,
+.speed-pill,
+.mock-monitor,
+.taskbar-preview strong,
+.range-control strong,
+.check-item,
+.secondary-btn,
+.select,
+.about-grid button {
+    color: var(--fi-text-soft);
+}
+
+.brand-mark,
+.logo-mark,
+.about-logo {
+    color: var(--fi-accent);
+    background: var(--fi-accent-faint);
+    border-color: var(--fi-border-strong);
+}
+
+.brand-block p,
+.group-head span,
+.text-button,
+.metric-icon,
+.app-source > span,
+.app-dot,
+.preview-note,
+.update-modal-icon,
+.update-progress-meta strong {
+    color: var(--fi-accent);
+}
+
+.title-status,
+.head-toggle,
+.update-link,
+.check-item {
+    background: var(--fi-surface-raised);
+}
+
+.window-actions button,
+.nav-item,
+.preview-tab,
+.segmented button,
+.ghost-btn {
+    color: var(--fi-muted);
+}
+
+.window-actions button:hover,
+.nav-item:hover,
+.nav-item.is-active,
+.update-link:hover {
+    color: var(--fi-text);
+    background: var(--fi-accent-soft);
+}
+
+.window-actions button:last-child:hover {
+    background: var(--fi-danger);
+}
+
+.nav-item.is-active::before,
+.progress-line i,
+.mini-meter i,
+.audio-wave i,
+.metric-card path,
+.update-progress i {
+    background: var(--fi-accent);
+}
+
+.metric-card path {
+    stroke: var(--fi-accent);
+}
+
+.nav-item em {
+    color: var(--fi-warning);
+    border-color: color-mix(in srgb, var(--fi-warning) 42%, transparent);
+}
+
+.title-status i,
+.live-dot i,
+.status-dot {
+    background: var(--fi-success);
+    box-shadow: none;
+}
+
+.live-dot i.is-muted {
+    background: var(--fi-faint);
+}
+
+.setting-group,
+.preview-panel,
+.side-preview-card,
+.theme-preview,
+.metric-card,
+.about-card,
+.about-grid button {
+    background: var(--fi-surface);
+    border-color: var(--fi-border);
+}
+
+.setting-row,
+.app-source {
+    border-top-color: var(--fi-border);
+}
+
+.settings-pane::-webkit-scrollbar-thumb,
+.single-page::-webkit-scrollbar-thumb {
+    background: var(--fi-control);
+}
+
+.ui-switch,
+.native-switch {
+    background: var(--fi-control);
+}
+
+.ui-switch span,
+.native-switch span {
+    background: var(--fi-thumb);
+}
+
+.ui-switch:has(input:checked),
+.native-switch:has(input:checked),
+.segmented button.is-active,
+.preview-tab.is-active,
+.primary-btn {
+    background: var(--fi-accent-strong);
+    color: #ffffff;
+}
+
+.segmented,
+.position-card,
+.preview-tab,
+.app-source > span,
+.secondary-btn,
+.select {
+    background: var(--fi-surface-raised);
+}
+
+.swatch {
+    box-shadow: inset 0 0 0 2px var(--fi-border-strong);
+}
+
+.swatch.is-active::after {
+    border-color: var(--fi-accent);
+}
+
+.swatch.custom {
+    color: var(--fi-text-soft);
+    background: var(--fi-surface-raised);
+}
+
+.range-control input,
+.check-item input {
+    accent-color: var(--fi-accent-strong);
+}
+
+.position-card {
+    color: var(--fi-muted);
+}
+
+.position-card i {
+    border-color: var(--fi-border-strong);
+}
+
+.position-card i::before {
+    background: var(--fi-accent);
+}
+
+.position-card.is-active {
+    color: var(--fi-text);
+    background: var(--fi-accent-soft);
+}
+
+.text-button,
+.metric-icon,
+.app-dot,
+.update-modal-icon {
+    background: var(--fi-accent-soft);
+}
+
+.danger-btn {
+    background: var(--fi-danger);
+}
+
+.preview-panel {
+    background: var(--fi-surface);
+}
+
+.desktop-frame {
+    background: linear-gradient(160deg, var(--fi-preview), var(--fi-surface-raised));
+}
+
+.wallpaper-glow {
+    background: radial-gradient(circle at 55% 34%, var(--fi-accent-soft), transparent 42%);
+    filter: blur(12px);
+}
+
+.taskbar-preview,
+.mock-island {
+    background: var(--fi-glass);
+    box-shadow: inset 0 0 0 1px var(--fi-border-strong), 0 12px 28px var(--fi-shadow);
+}
+
+.taskbar-preview span,
+.progress-line,
+.mini-meter,
+.round-play {
+    background: var(--fi-border-strong);
+}
+
+.cover-art,
+.lyric-cover {
+    background: linear-gradient(135deg, var(--fi-surface-soft), var(--fi-accent));
+}
+
+.panda-face {
+    background: var(--fi-text-soft);
+}
+
+.panda-face::before,
+.panda-face::after,
+.panda-face i,
+.panda-face b {
+    background: var(--fi-surface-raised);
+}
+
+.preview-note,
+.status-pill.ok {
+    background: var(--fi-accent-faint);
+}
+
+.status-pill.ok {
+    color: var(--fi-success);
+}
+
+.mini-window {
+    background: var(--fi-surface-raised);
+}
+
+.mini-window i {
+    background: var(--fi-accent-soft);
+}
+
+.mini-window div {
+    background: var(--fi-border-strong);
+}
+
+.modal-overlay {
+    background: rgba(0, 0, 0, 0.54);
+}
+
+.modal-card {
+    background: var(--fi-surface);
+    border-color: var(--fi-border-strong);
+    box-shadow: 0 24px 70px var(--fi-shadow);
+}
+
+.modal-card p {
+    color: var(--fi-muted);
+}
+
+.update-progress {
+    background: var(--fi-surface-soft);
+}
+
+.update-progress i {
+    box-shadow: none;
+}
+
+@media (prefers-color-scheme: light) {
+    .fi-shell {
+        color-scheme: light;
+        --fi-bg: #f3f4f6;
+        --fi-chrome: #ffffff;
+        --fi-sidebar: #f8f9fb;
+        --fi-surface: #ffffff;
+        --fi-surface-raised: #f0f2f5;
+        --fi-surface-soft: #e4e8ed;
+        --fi-border: rgba(28, 32, 38, 0.10);
+        --fi-border-strong: rgba(28, 32, 38, 0.16);
+        --fi-text: #20242a;
+        --fi-text-soft: #4e5661;
+        --fi-muted: #6f7782;
+        --fi-faint: #8b949e;
+        --fi-accent: #4878bd;
+        --fi-accent-strong: #3267ad;
+        --fi-accent-soft: rgba(72, 120, 189, 0.13);
+        --fi-accent-faint: rgba(72, 120, 189, 0.07);
+        --fi-success: #278a59;
+        --fi-warning: #9b6a1d;
+        --fi-danger: #c25359;
+        --fi-control: #c9d0d8;
+        --fi-thumb: #ffffff;
+        --fi-glass: rgba(255, 255, 255, 0.84);
+        --fi-preview: #dfe5ec;
+        --fi-shadow: rgba(31, 41, 55, 0.14);
+    }
+
+    .modal-overlay {
+        background: rgba(32, 36, 42, 0.28);
+    }
+}
+
 @media (max-width: 920px) {
     .fi-body {
         grid-template-columns: 178px minmax(0, 1fr);

@@ -1,6 +1,6 @@
 [package]
 name = "flow-island"
-version = "2.3.12"
+version = "2.3.13"
 description = "FlowIsland desktop dynamic island companion"
 authors = ["CHmua"]
 edition = "2021"
