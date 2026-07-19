@@ -1,5 +1,5 @@
 <template>
-    <div class="fi-shell">
+    <div class="fi-shell" :class="shellThemeClass">
         <header class="fi-titlebar" data-tauri-drag-region>
             <div class="title-brand" data-tauri-drag-region>
                 <span class="brand-mark">
@@ -469,7 +469,7 @@
 </template>
 
 <script setup lang="ts">
-import { defineComponent, h, nextTick, onMounted, onUnmounted, PropType, ref, watch } from 'vue';
+import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, PropType, ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
@@ -517,18 +517,34 @@ if (localStorage.getItem(MUSIC_ONLY_DEFAULTS_KEY) !== 'true') {
 type NavId = 'island' | 'notify' | 'music' | 'monitor' | 'appearance' | 'general' | 'about';
 type PreviewMode = 'default' | 'music' | 'lyric' | 'notify' | 'task' | 'monitor' | 'panda';
 type PositionMode = 'top' | 'taskbar' | 'custom';
+type IslandThemeMode = 'black' | 'white' | 'system';
+type ConsoleThemeMode = 'dark' | 'light' | 'system';
+
+const savedIslandTheme = localStorage.getItem('nsd_island_theme');
+const initialIslandTheme: IslandThemeMode = savedIslandTheme === 'black' || savedIslandTheme === 'white'
+    ? savedIslandTheme
+    : 'system';
 
 const activeSection = ref<NavId>('island');
 const previewMode = ref<PreviewMode>('music');
 const isWidgetVisible = ref(false);
 const autoStart = ref(false);
-const appVersion = ref('2.3.12');
+const appVersion = ref('2.3.14');
 const uploadSpeed = ref('0 B/s');
 const downloadSpeed = ref('0 B/s');
 const opacity = ref(Number(localStorage.getItem('nsd_island_opacity') || '30'));
 const lyricOffsetMs = ref(Number(localStorage.getItem('nsd_lyric_offset_ms') || '0'));
-const themeMode = ref(localStorage.getItem('nsd_theme_mode') || 'system');
-const islandTheme = ref(localStorage.getItem('nsd_island_theme') || 'system');
+const islandTheme = ref<IslandThemeMode>(initialIslandTheme);
+const themeMode = ref<ConsoleThemeMode>(
+    initialIslandTheme === 'black' ? 'dark' : initialIslandTheme === 'white' ? 'light' : 'system',
+);
+const systemTheme = ref<'dark' | 'light'>(
+    window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
+);
+const resolvedTheme = computed<'dark' | 'light'>(() => (
+    themeMode.value === 'system' ? systemTheme.value : themeMode.value
+));
+const shellThemeClass = computed(() => `is-${resolvedTheme.value}`);
 const enableMusicCtrl = ref(localStorage.getItem('nsd_music_ctrl') !== 'false');
 const enableMsgNotify = ref(localStorage.getItem('nsd_msg_notify') !== 'false');
 const msgModeEnabled = ref(localStorage.getItem('nsd_msg_mode') !== 'false');
@@ -627,6 +643,8 @@ let lastRx = 0;
 let lastTx = 0;
 let pendingUpdate: NormalizedReleaseInfo | null = null;
 let unlistenUpdateProgress: (() => void) | null = null;
+let unlistenWindowTheme: (() => void) | null = null;
+let systemThemeMedia: MediaQueryList | null = null;
 
 const PageHeader = defineComponent({
     props: {
@@ -906,9 +924,43 @@ const toggleMsgNotify = () => {
     localStorage.setItem('nsd_msg_notify', String(enableMsgNotify.value));
 };
 
+const applyWindowTheme = async (mode: ConsoleThemeMode) => {
+    try {
+        const win = getCurrentWindow();
+        if (mode === 'system') {
+            await win.setTheme(null);
+            const currentTheme = await win.theme();
+            if (currentTheme === 'dark' || currentTheme === 'light') {
+                systemTheme.value = currentTheme;
+            }
+        } else {
+            await win.setTheme(mode);
+        }
+    } catch {
+        if (mode === 'system') {
+            systemTheme.value = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        }
+    }
+};
+
+const handleSystemThemeChange = (event: MediaQueryListEvent) => {
+    systemTheme.value = event.matches ? 'dark' : 'light';
+};
+
 const setThemeMode = (mode: string) => {
-    themeMode.value = mode;
-    localStorage.setItem('nsd_theme_mode', mode);
+    const nextMode: ConsoleThemeMode = mode === 'dark' || mode === 'light' ? mode : 'system';
+    const nextIslandTheme: IslandThemeMode = nextMode === 'dark'
+        ? 'black'
+        : nextMode === 'light' ? 'white' : 'system';
+
+    themeMode.value = nextMode;
+    localStorage.setItem('nsd_theme_mode', nextMode);
+
+    if (islandTheme.value !== nextIslandTheme) {
+        islandTheme.value = nextIslandTheme;
+    } else {
+        void applyWindowTheme(nextMode);
+    }
 };
 
 const minimizeWindow = async () => {
@@ -1148,7 +1200,11 @@ watch(lyricOffsetMs, async (value) => {
 });
 
 watch(islandTheme, async (value) => {
+    const nextMode: ConsoleThemeMode = value === 'black' ? 'dark' : value === 'white' ? 'light' : 'system';
+    themeMode.value = nextMode;
+    localStorage.setItem('nsd_theme_mode', nextMode);
     localStorage.setItem('nsd_island_theme', value);
+    await applyWindowTheme(nextMode);
     await emit('control-island-theme', { theme: value });
 });
 
@@ -1158,6 +1214,22 @@ watch(enableMusicCtrl, async (value) => {
 });
 
 onMounted(async () => {
+    systemThemeMedia = window.matchMedia('(prefers-color-scheme: dark)');
+    systemTheme.value = systemThemeMedia.matches ? 'dark' : 'light';
+    systemThemeMedia.addEventListener('change', handleSystemThemeChange);
+
+    await applyWindowTheme(themeMode.value);
+    try {
+        const win = getCurrentWindow();
+        unlistenWindowTheme = await win.onThemeChanged(({ payload }) => {
+            if (payload === 'dark' || payload === 'light') {
+                systemTheme.value = payload;
+            }
+        });
+    } catch {
+        // Browser preview falls back to prefers-color-scheme.
+    }
+
     try {
         appVersion.value = await getVersion();
     } catch { /* ignore */ }
@@ -1212,6 +1284,10 @@ onUnmounted(() => {
     if (speedTimer != null) {
         window.clearInterval(speedTimer);
     }
+    systemThemeMedia?.removeEventListener('change', handleSystemThemeChange);
+    systemThemeMedia = null;
+    unlistenWindowTheme?.();
+    unlistenWindowTheme = null;
     unlistenUpdateProgress?.();
     unlistenUpdateProgress = null;
 });
@@ -2872,38 +2948,36 @@ button {
     box-shadow: none;
 }
 
-@media (prefers-color-scheme: light) {
-    .fi-shell {
-        color-scheme: light;
-        --fi-bg: #f3f4f6;
-        --fi-chrome: #ffffff;
-        --fi-sidebar: #f8f9fb;
-        --fi-surface: #ffffff;
-        --fi-surface-raised: #f0f2f5;
-        --fi-surface-soft: #e4e8ed;
-        --fi-border: rgba(28, 32, 38, 0.10);
-        --fi-border-strong: rgba(28, 32, 38, 0.16);
-        --fi-text: #20242a;
-        --fi-text-soft: #4e5661;
-        --fi-muted: #6f7782;
-        --fi-faint: #8b949e;
-        --fi-accent: #4878bd;
-        --fi-accent-strong: #3267ad;
-        --fi-accent-soft: rgba(72, 120, 189, 0.13);
-        --fi-accent-faint: rgba(72, 120, 189, 0.07);
-        --fi-success: #278a59;
-        --fi-warning: #9b6a1d;
-        --fi-danger: #c25359;
-        --fi-control: #c9d0d8;
-        --fi-thumb: #ffffff;
-        --fi-glass: rgba(255, 255, 255, 0.84);
-        --fi-preview: #dfe5ec;
-        --fi-shadow: rgba(31, 41, 55, 0.14);
-    }
+.fi-shell.is-light {
+    color-scheme: light;
+    --fi-bg: #f3f4f6;
+    --fi-chrome: #ffffff;
+    --fi-sidebar: #f8f9fb;
+    --fi-surface: #ffffff;
+    --fi-surface-raised: #f0f2f5;
+    --fi-surface-soft: #e4e8ed;
+    --fi-border: rgba(28, 32, 38, 0.10);
+    --fi-border-strong: rgba(28, 32, 38, 0.16);
+    --fi-text: #20242a;
+    --fi-text-soft: #4e5661;
+    --fi-muted: #6f7782;
+    --fi-faint: #8b949e;
+    --fi-accent: #4878bd;
+    --fi-accent-strong: #3267ad;
+    --fi-accent-soft: rgba(72, 120, 189, 0.13);
+    --fi-accent-faint: rgba(72, 120, 189, 0.07);
+    --fi-success: #278a59;
+    --fi-warning: #9b6a1d;
+    --fi-danger: #c25359;
+    --fi-control: #c9d0d8;
+    --fi-thumb: #ffffff;
+    --fi-glass: rgba(255, 255, 255, 0.84);
+    --fi-preview: #dfe5ec;
+    --fi-shadow: rgba(31, 41, 55, 0.14);
+}
 
-    .modal-overlay {
-        background: rgba(32, 36, 42, 0.28);
-    }
+.fi-shell.is-light .modal-overlay {
+    background: rgba(32, 36, 42, 0.28);
 }
 
 @media (max-width: 920px) {
