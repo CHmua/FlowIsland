@@ -1958,11 +1958,26 @@ const COMPACT_HEIGHT = 42;
 const MESSAGE_WIDTH = 330;
 const MESSAGE_HEIGHT = COMPACT_HEIGHT;
 const DEFAULT_DASHBOARD_WIDTH = 820;
-const HARDWARE_WIDTH = 800;
+const HARDWARE_MAX_WIDTH = 920;
+const HARDWARE_LAYOUT_INSET = 56;
+const HARDWARE_ITEM_GAP = 10;
 const SPLIT_ACTIVITY_WIDTH = 970;
-const hardwareTargetWidth = computed(() =>
-    Math.min(HARDWARE_WIDTH, Math.max(COMPACT_WIDTH, 38 + visibleHardwareMetricCount.value * 146))
-);
+const hardwareTargetWidth = computed(() => {
+    const metricWidths: number[] = [];
+
+    if (showCpuMetric.value) metricWidths.push(168);
+    if (showGpuMetric.value) metricWidths.push(168, 136);
+    if (showMemoryMetric.value) metricWidths.push(148);
+    if (showNetworkMetric.value) metricWidths.push(196);
+
+    const contentWidth = metricWidths.reduce((total, width) => total + width, 0);
+    const gapWidth = Math.max(0, metricWidths.length - 1) * HARDWARE_ITEM_GAP;
+
+    return Math.min(
+        HARDWARE_MAX_WIDTH,
+        Math.max(COMPACT_WIDTH, HARDWARE_LAYOUT_INSET + contentWidth + gapWidth),
+    );
+});
 const WINDOW_SAFE_PADDING_X = 28;
 
 const getWindowLogicalWidth = (islandWidth: number) => islandWidth + WINDOW_SAFE_PADDING_X * 2;
@@ -2727,6 +2742,21 @@ onUnmounted(() => {
     width: 100%;
     box-sizing: border-box;
     white-space: nowrap;
+}
+
+.hardware-stats-box {
+    gap: 10px;
+    padding: 0 10px;
+    overflow: hidden;
+}
+
+.hardware-stats-box .default-stat-values {
+    gap: 6px;
+    font-size: 11px;
+}
+
+.hardware-stats-box .network-values {
+    gap: 8px;
 }
 
 .default-stat-item {
