@@ -3,7 +3,7 @@
         <header class="fi-titlebar" data-tauri-drag-region>
             <div class="title-brand" data-tauri-drag-region>
                 <span class="brand-mark">
-                    <Sparkles :size="17" />
+                    <img :src="flowIslandLogo" alt="" />
                 </span>
                 <strong>FlowIsland</strong>
             </div>
@@ -25,7 +25,7 @@
             <aside class="sidebar">
                 <div class="brand-block">
                     <div class="logo-mark">
-                        <Sparkles :size="28" />
+                        <img :src="flowIslandLogo" alt="FlowIsland" />
                     </div>
                     <div>
                         <h1>FlowIsland</h1>
@@ -105,24 +105,24 @@
                                     <span>系统通知</span>
                                 </label>
                                 <label class="check-item">
-                                    <input v-model="showTaskProgress" type="checkbox">
-                                    <span>任务进度</span>
-                                </label>
-                                <label class="check-item">
-                                    <input v-model="showNetwork" type="checkbox">
-                                    <span>网速</span>
+                                    <input v-model="enableHardwareMonitor" type="checkbox">
+                                    <span>系统监控</span>
                                 </label>
                                 <label class="check-item">
                                     <input v-model="showCpu" type="checkbox">
                                     <span>CPU</span>
                                 </label>
                                 <label class="check-item">
+                                    <input v-model="showGpu" type="checkbox">
+                                    <span>显卡</span>
+                                </label>
+                                <label class="check-item">
                                     <input v-model="showMemory" type="checkbox">
                                     <span>内存</span>
                                 </label>
                                 <label class="check-item">
-                                    <input v-model="showPandaPet" type="checkbox">
-                                    <span>桌面宠物</span>
+                                    <input v-model="showNetwork" type="checkbox">
+                                    <span>网络</span>
                                 </label>
                             </div>
                         </SettingGroup>
@@ -174,7 +174,7 @@
                         </SettingGroup>
                     </div>
 
-                    <PreviewPanel :mode="previewMode" :running="isWidgetVisible" @change="previewMode = $event" />
+                    <PreviewPanel :mode="previewMode" :running="previewRunning" @change="previewMode = $event" />
                 </section>
 
                 <section v-show="activeSection === 'notify'" class="page-layout single-page">
@@ -273,14 +273,39 @@
 
                 <section v-show="activeSection === 'monitor'" class="page-layout single-page">
                     <div class="settings-pane full">
-                        <PageHeader title="系统监控" desc="选择灵动岛中需要展示的硬件与网络状态" />
+                        <PageHeader title="系统监控" desc="选择灵动岛中需要展示的硬件与网络状态">
+                            <div class="head-toggle">
+                                <span>显示监控岛</span>
+                                <UiSwitch v-model="enableHardwareMonitor" />
+                            </div>
+                        </PageHeader>
                         <div class="metric-grid">
-                            <MetricCard icon="cpu" title="CPU" value="18%" detail="58°C · 2600RPM" />
-                            <MetricCard icon="memory" title="内存" value="42%" detail="13.5 / 31.9 GB" />
-                            <MetricCard icon="gpu" title="显卡" value="12%" detail="46°C · 0RPM" />
-                            <MetricCard icon="drive" title="显存" value="8%" detail="1.2 / 16.0 GB" />
+                            <MetricCard icon="cpu" title="CPU" :value="monitorCpuUsage" :detail="monitorCpuDetail" />
+                            <MetricCard icon="memory" title="内存" :value="monitorMemoryUsage" :detail="monitorMemoryDetail" />
+                            <MetricCard icon="gpu" title="显卡" :value="monitorGpuUsage" :detail="monitorGpuDetail" />
+                            <MetricCard icon="drive" title="显存" :value="monitorVramUsage" :detail="monitorVramDetail" />
                             <MetricCard icon="network" title="网络" :value="downloadSpeed" :detail="`上传 ${uploadSpeed}`" />
                         </div>
+                        <SettingGroup title="显示项目" eyebrow="Metrics">
+                            <div class="check-grid">
+                                <label class="check-item">
+                                    <input v-model="showCpu" type="checkbox">
+                                    <span>CPU</span>
+                                </label>
+                                <label class="check-item">
+                                    <input v-model="showGpu" type="checkbox">
+                                    <span>显卡与显存</span>
+                                </label>
+                                <label class="check-item">
+                                    <input v-model="showMemory" type="checkbox">
+                                    <span>内存</span>
+                                </label>
+                                <label class="check-item">
+                                    <input v-model="showNetwork" type="checkbox">
+                                    <span>网络</span>
+                                </label>
+                            </div>
+                        </SettingGroup>
                         <SettingGroup title="监控显示" eyebrow="Display">
                             <SettingRow title="刷新频率" desc="低频采样，减少后台占用">
                                 <select v-model="monitorRefreshRate" class="select">
@@ -407,7 +432,7 @@
                         <PageHeader title="关于与更新" desc="版本信息、更新入口和项目链接" />
                         <div class="about-card">
                             <div class="about-logo">
-                                <Sparkles :size="34" />
+                                <img :src="flowIslandLogo" alt="FlowIsland" />
                             </div>
                             <div>
                                 <h3>FlowIsland</h3>
@@ -498,8 +523,8 @@ import {
     Upload,
     Wifi,
     X,
-    Zap,
 } from 'lucide-vue-next';
+import flowIslandLogo from '../assets/flowisland-logo.svg';
 
 const MUSIC_ONLY_DEFAULTS_KEY = 'nsd_music_only_defaults_v3';
 if (localStorage.getItem(MUSIC_ONLY_DEFAULTS_KEY) !== 'true') {
@@ -515,10 +540,24 @@ if (localStorage.getItem(MUSIC_ONLY_DEFAULTS_KEY) !== 'true') {
 }
 
 type NavId = 'island' | 'notify' | 'music' | 'monitor' | 'appearance' | 'general' | 'about';
-type PreviewMode = 'default' | 'music' | 'lyric' | 'notify' | 'task' | 'monitor' | 'panda';
+type PreviewMode = 'music' | 'lyric' | 'notify' | 'monitor';
 type PositionMode = 'top' | 'taskbar' | 'custom';
 type IslandThemeMode = 'black' | 'white' | 'system';
 type ConsoleThemeMode = 'dark' | 'light' | 'system';
+type HardwareStats = {
+    cpuUsage: number;
+    cpuTemperature?: number | null;
+    cpuFanRpm?: number | null;
+    usedMemory: number;
+    totalMemory: number;
+    gpuUsage?: number | null;
+    gpuTemperature?: number | null;
+    gpuFanRpm?: number | null;
+    gpuFanSpeedPercent?: number | null;
+    gpuMemoryUsage?: number | null;
+    gpuMemoryUsedMb?: number | null;
+    gpuMemoryTotalMb?: number | null;
+};
 
 const savedIslandTheme = localStorage.getItem('nsd_island_theme');
 const initialIslandTheme: IslandThemeMode = savedIslandTheme === 'black' || savedIslandTheme === 'white'
@@ -529,7 +568,7 @@ const activeSection = ref<NavId>('island');
 const previewMode = ref<PreviewMode>('music');
 const isWidgetVisible = ref(false);
 const autoStart = ref(false);
-const appVersion = ref('2.3.14');
+const appVersion = ref('2.3.15');
 const uploadSpeed = ref('0 B/s');
 const downloadSpeed = ref('0 B/s');
 const opacity = ref(Number(localStorage.getItem('nsd_island_opacity') || '30'));
@@ -547,6 +586,7 @@ const resolvedTheme = computed<'dark' | 'light'>(() => (
 const shellThemeClass = computed(() => `is-${resolvedTheme.value}`);
 const enableMusicCtrl = ref(localStorage.getItem('nsd_music_ctrl') !== 'false');
 const enableMsgNotify = ref(localStorage.getItem('nsd_msg_notify') !== 'false');
+const enableHardwareMonitor = ref(localStorage.getItem('nsd_hardware_mon') === 'true');
 const msgModeEnabled = ref(localStorage.getItem('nsd_msg_mode') !== 'false');
 const pinToTaskbar = ref(localStorage.getItem('nsd_pin_taskbar') === 'true');
 const isChecking = ref(false);
@@ -562,12 +602,11 @@ const updateDownloadedText = ref('准备下载');
 const selectedAccent = ref('#4C8DFF');
 const islandRadius = ref(38);
 const showIslandShadow = ref(true);
-const showLyrics = ref(true);
-const showTaskProgress = ref(true);
-const showNetwork = ref(true);
-const showCpu = ref(true);
-const showMemory = ref(true);
-const showPandaPet = ref(false);
+const showLyrics = ref(localStorage.getItem('nsd_show_lyrics') !== 'false');
+const showNetwork = ref(localStorage.getItem('nsd_show_network') !== 'false');
+const showCpu = ref(localStorage.getItem('nsd_show_cpu') !== 'false');
+const showGpu = ref(localStorage.getItem('nsd_show_gpu') !== 'false');
+const showMemory = ref(localStorage.getItem('nsd_show_memory') !== 'false');
 const hoverExpand = ref(true);
 const clickOpenDetail = ref(true);
 const autoHideIsland = ref(true);
@@ -579,7 +618,7 @@ const dndMode = ref(true);
 const browserVideoEnabled = ref(false);
 const lyricsSource = ref('auto');
 const lyricsStyle = ref<'double' | 'single'>('double');
-const monitorRefreshRate = ref('2');
+const monitorRefreshRate = ref(localStorage.getItem('nsd_monitor_refresh_rate') || '2');
 const monitorUnit = ref('auto');
 const safeMonitorMode = ref(true);
 const consoleOpacity = ref(92);
@@ -590,6 +629,17 @@ const minimizeToTray = ref(true);
 const closeBehavior = ref('tray');
 const autoCheckUpdate = ref(true);
 const language = ref('zh-CN');
+const monitorCpuUsage = ref('--');
+const monitorCpuDetail = ref('正在读取');
+const monitorMemoryUsage = ref('--');
+const monitorMemoryDetail = ref('正在读取');
+const monitorGpuUsage = ref('--');
+const monitorGpuDetail = ref('正在读取');
+const monitorVramUsage = ref('--');
+const monitorVramDetail = ref('正在读取');
+const previewRunning = computed(() => previewMode.value === 'monitor'
+    ? enableHardwareMonitor.value
+    : isWidgetVisible.value);
 
 const accentColors = ['#4C8DFF', '#8B6DFF', '#45C7E8', '#F4B85A', '#4CD7A0'];
 const notificationSources = ref([
@@ -611,23 +661,17 @@ const navItems = [
 ];
 
 const previewModes = [
-    { id: 'default' as const, label: '默认' },
     { id: 'music' as const, label: '音乐' },
     { id: 'lyric' as const, label: '歌词' },
     { id: 'notify' as const, label: '通知' },
-    { id: 'task' as const, label: '任务' },
     { id: 'monitor' as const, label: '监控' },
-    { id: 'panda' as const, label: '熊猫' },
 ];
 
 const previewLabels: Record<PreviewMode, string> = {
-    default: '默认状态',
     music: '音乐播放中',
     lyric: '歌词同步中',
     notify: '通知弹出',
-    task: '任务进行中',
     monitor: '系统监控',
-    panda: '熊猫宠物',
 };
 
 const dialog = ref({
@@ -639,8 +683,10 @@ const dialog = ref({
 });
 
 let speedTimer: number | null = null;
+let monitorTimer: number | null = null;
 let lastRx = 0;
 let lastTx = 0;
+let lastSpeedSampleAt = 0;
 let pendingUpdate: NormalizedReleaseInfo | null = null;
 let unlistenUpdateProgress: (() => void) | null = null;
 let unlistenWindowTheme: (() => void) | null = null;
@@ -736,14 +782,6 @@ const MockIsland = defineComponent({
     },
     setup(props) {
         return () => {
-            if (props.mode === 'default') {
-                return h('div', { class: 'mock-island mock-default' }, [
-                    h('span', { class: 'time-pill' }, '14:30'),
-                    h('span', { class: 'speed-pill' }, '↓ 12.4 KB/s'),
-                    h('span', { class: 'speed-pill' }, '↑ 4.1 KB/s'),
-                    h('span', { class: 'status-dot' }),
-                ]);
-            }
             if (props.mode === 'music') {
                 return h('div', { class: 'mock-island mock-music' }, [
                     h('span', { class: 'cover-art' }),
@@ -768,32 +806,17 @@ const MockIsland = defineComponent({
                     h('button', { class: 'text-button' }, '查看'),
                 ]);
             }
-            if (props.mode === 'task') {
-                return h('div', { class: 'mock-island mock-task' }, [
-                    h('span', { class: 'app-dot' }, [h(ClockIcon)]),
-                    h('div', { class: 'notify-copy' }, [h('strong', '正在同步文件'), h('small', '68% · 剩余约 2 分钟')]),
-                    h('div', { class: 'mini-meter' }, [h('i', { style: 'width:68%' })]),
-                ]);
-            }
             if (props.mode === 'monitor') {
-                return h('div', { class: 'mock-island mock-monitor' }, [
-                    h('span', [h(Cpu, { size: 17 }), ' CPU ', h('strong', '18%')]),
-                    h('span', ['内存 ', h('strong', '42%')]),
-                    h('span', ['网络 ', h('strong', '24K/s')]),
-                ]);
+                const items = [];
+                if (showCpu.value) items.push(h('span', [h(Cpu, { size: 17 }), ' CPU ', h('strong', monitorCpuUsage.value)]));
+                if (showGpu.value) items.push(h('span', ['显卡 ', h('strong', monitorGpuUsage.value)]));
+                if (showMemory.value) items.push(h('span', ['内存 ', h('strong', monitorMemoryUsage.value)]));
+                if (showNetwork.value) items.push(h('span', ['网络 ', h('strong', downloadSpeed.value)]));
+                if (items.length === 0) items.push(h('span', '请至少选择一个监控项目'));
+                return h('div', { class: 'mock-island mock-monitor' }, items);
             }
-            return h('div', { class: 'mock-island mock-panda' }, [
-                h('span', { class: 'panda-face' }, [h('i'), h('b')]),
-                h('div', { class: 'notify-copy' }, [h('strong', '熊猫在休息'), h('small', '轻点唤醒桌面宠物')]),
-                h('span', { class: 'status-dot' }),
-            ]);
+            return h('div', { class: 'mock-island' }, '预览不可用');
         };
-    },
-});
-
-const ClockIcon = defineComponent({
-    setup() {
-        return () => h(Zap, { size: 15 });
     },
 });
 
@@ -877,15 +900,71 @@ const formatSpeed = (bytes: number) => {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB/s`;
 };
 
+const formatOptionalPercent = (value?: number | null) =>
+    typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}%` : '--';
+
+const formatTemperature = (value?: number | null) =>
+    typeof value === 'number' && Number.isFinite(value) ? `${Math.round(value)}°C` : '--°C';
+
+const formatFan = (rpm?: number | null, percent?: number | null) => {
+    if (typeof rpm === 'number' && Number.isFinite(rpm)) return `${Math.round(rpm)}RPM`;
+    if (typeof percent === 'number' && Number.isFinite(percent)) return `${Math.round(percent)}%`;
+    return '风扇 --';
+};
+
+const formatMemory = (usedBytes: number, totalBytes: number) => {
+    if (!Number.isFinite(usedBytes) || !Number.isFinite(totalBytes) || totalBytes <= 0) return '-- / --';
+    return `${(usedBytes / 1024 / 1024 / 1024).toFixed(1)} / ${(totalBytes / 1024 / 1024 / 1024).toFixed(1)} GB`;
+};
+
+const formatVram = (usedMb?: number | null, totalMb?: number | null) => {
+    if (typeof usedMb !== 'number' || typeof totalMb !== 'number' || totalMb <= 0) return '-- / --';
+    return `${(usedMb / 1024).toFixed(1)} / ${(totalMb / 1024).toFixed(1)} GB`;
+};
+
+const fetchHardwareStats = async () => {
+    try {
+        const stats = await invoke<HardwareStats>('get_hardware_stats');
+        monitorCpuUsage.value = formatOptionalPercent(stats.cpuUsage);
+        monitorCpuDetail.value = `${formatTemperature(stats.cpuTemperature)} · ${formatFan(stats.cpuFanRpm)}`;
+        monitorMemoryUsage.value = stats.totalMemory > 0
+            ? `${Math.round((stats.usedMemory / stats.totalMemory) * 100)}%`
+            : '--';
+        monitorMemoryDetail.value = formatMemory(stats.usedMemory, stats.totalMemory);
+        monitorGpuUsage.value = formatOptionalPercent(stats.gpuUsage);
+        monitorGpuDetail.value = `${formatTemperature(stats.gpuTemperature)} · ${formatFan(stats.gpuFanRpm, stats.gpuFanSpeedPercent)}`;
+        monitorVramUsage.value = formatOptionalPercent(stats.gpuMemoryUsage);
+        monitorVramDetail.value = formatVram(stats.gpuMemoryUsedMb, stats.gpuMemoryTotalMb);
+    } catch {
+        monitorCpuDetail.value = '当前环境无法读取';
+        monitorMemoryDetail.value = '当前环境无法读取';
+        monitorGpuDetail.value = '当前环境无法读取';
+        monitorVramDetail.value = '当前环境无法读取';
+    }
+};
+
+const restartMonitorTimer = () => {
+    if (monitorTimer != null) {
+        window.clearInterval(monitorTimer);
+        monitorTimer = null;
+    }
+    if (!enableHardwareMonitor.value && activeSection.value !== 'monitor') return;
+    const refreshMs = Math.max(1, Number(monitorRefreshRate.value) || 2) * 1000;
+    monitorTimer = window.setInterval(fetchHardwareStats, refreshMs);
+};
+
 const fetchSpeedStats = async () => {
     try {
         const [currentRx, currentTx] = await invoke<[number, number]>('get_network_stats');
+        const sampledAt = performance.now();
         if (lastRx !== 0 && lastTx !== 0) {
-            downloadSpeed.value = formatSpeed(Math.max(0, (currentRx - lastRx) / 2));
-            uploadSpeed.value = formatSpeed(Math.max(0, (currentTx - lastTx) / 2));
+            const elapsedSeconds = Math.max(0.25, (sampledAt - lastSpeedSampleAt) / 1000);
+            downloadSpeed.value = formatSpeed(Math.max(0, (currentRx - lastRx) / elapsedSeconds));
+            uploadSpeed.value = formatSpeed(Math.max(0, (currentTx - lastTx) / elapsedSeconds));
         }
         lastRx = currentRx;
         lastTx = currentTx;
+        lastSpeedSampleAt = sampledAt;
     } catch (error) {
         console.error('获取网络速度失败:', error);
     }
@@ -1213,6 +1292,36 @@ watch(enableMusicCtrl, async (value) => {
     await emit('control-music-ctl', { enabled: value });
 });
 
+watch(showLyrics, async (value) => {
+    localStorage.setItem('nsd_show_lyrics', String(value));
+    await emit('control-lyrics-visibility', { enabled: value });
+});
+
+watch(enableHardwareMonitor, async (value) => {
+    localStorage.setItem('nsd_hardware_mon', String(value));
+    await emit('control-hardware-mon', { enabled: value });
+    if (value) await fetchHardwareStats();
+    restartMonitorTimer();
+});
+
+watch([showCpu, showGpu, showMemory, showNetwork], async ([cpu, gpu, memory, network]) => {
+    localStorage.setItem('nsd_show_cpu', String(cpu));
+    localStorage.setItem('nsd_show_gpu', String(gpu));
+    localStorage.setItem('nsd_show_memory', String(memory));
+    localStorage.setItem('nsd_show_network', String(network));
+    await emit('control-monitor-metrics', { cpu, gpu, memory, network });
+});
+
+watch(monitorRefreshRate, (value) => {
+    localStorage.setItem('nsd_monitor_refresh_rate', value);
+    restartMonitorTimer();
+});
+
+watch(activeSection, async (section) => {
+    if (section === 'monitor') await fetchHardwareStats();
+    restartMonitorTimer();
+});
+
 onMounted(async () => {
     systemThemeMedia = window.matchMedia('(prefers-color-scheme: dark)');
     systemTheme.value = systemThemeMedia.matches ? 'dark' : 'light';
@@ -1240,6 +1349,10 @@ onMounted(async () => {
 
     await fetchSpeedStats();
     speedTimer = window.setInterval(fetchSpeedStats, 2000);
+    if (enableHardwareMonitor.value || activeSection.value === 'monitor') {
+        await fetchHardwareStats();
+    }
+    restartMonitorTimer();
 
     try {
         await listen('open-settings-panel', async () => {
@@ -1283,6 +1396,9 @@ onMounted(async () => {
 onUnmounted(() => {
     if (speedTimer != null) {
         window.clearInterval(speedTimer);
+    }
+    if (monitorTimer != null) {
+        window.clearInterval(monitorTimer);
     }
     systemThemeMedia?.removeEventListener('change', handleSystemThemeChange);
     systemThemeMedia = null;
@@ -1383,9 +1499,16 @@ button {
 .logo-mark {
     display: grid;
     place-items: center;
-    color: #6cb7ff;
-    background: linear-gradient(180deg, rgba(76, 141, 255, 0.18), rgba(69, 199, 232, 0.06));
-    border: 1px solid rgba(76, 141, 255, 0.28);
+    overflow: hidden;
+    background: transparent;
+    border: 0;
+}
+
+.brand-mark img,
+.logo-mark img {
+    display: block;
+    width: 100%;
+    height: 100%;
 }
 
 .brand-mark {
@@ -2450,8 +2573,14 @@ button {
     border-radius: 18px;
     display: grid;
     place-items: center;
-    color: #8fc1ff;
-    background: linear-gradient(180deg, rgba(76, 141, 255, 0.20), rgba(69, 199, 232, 0.06));
+    overflow: hidden;
+    background: transparent;
+}
+
+.about-logo img {
+    display: block;
+    width: 100%;
+    height: 100%;
 }
 
 .about-card h3 {
@@ -2696,8 +2825,6 @@ button {
 .logo-mark,
 .about-logo {
     color: var(--fi-accent);
-    background: var(--fi-accent-faint);
-    border-color: var(--fi-border-strong);
 }
 
 .brand-block p,

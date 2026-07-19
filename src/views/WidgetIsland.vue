@@ -47,18 +47,7 @@
                     <transition @enter="onInnerEnter" @leave="onInnerLeave" :css="false">
                         <div class="speed-box default-stats-box hardware-stats-box"
                             v-show="isHardwarePrimary && !isMsgActive" key="hardware">
-                            <div class="default-stat-item default-stat-fps">
-                                <div class="default-stat-icon">
-                                    <span class="nsd-mark nsd-mark-fps" aria-hidden="true"></span>
-                                </div>
-                                <div class="default-stat-copy">
-                                    <div class="default-stat-title">FPS</div>
-                                    <div class="default-stat-values">
-                                        <span>{{ gameFps }}</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="default-stat-item default-stat-compute">
+                            <div v-if="showCpuMetric" class="default-stat-item default-stat-compute">
                                 <div class="default-stat-icon">
                                     <span class="nsd-mark nsd-mark-cpu" aria-hidden="true"></span>
                                 </div>
@@ -71,7 +60,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="default-stat-item default-stat-compute">
+                            <div v-if="showGpuMetric" class="default-stat-item default-stat-compute">
                                 <div class="default-stat-icon">
                                     <span class="nsd-mark nsd-mark-gpu" aria-hidden="true"></span>
                                 </div>
@@ -84,7 +73,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="default-stat-item default-stat-memory">
+                            <div v-if="showGpuMetric" class="default-stat-item default-stat-memory">
                                 <div class="default-stat-icon">
                                     <span class="nsd-mark nsd-mark-mem" aria-hidden="true"></span>
                                 </div>
@@ -96,7 +85,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="default-stat-item default-stat-memory">
+                            <div v-if="showMemoryMetric" class="default-stat-item default-stat-memory">
                                 <div class="default-stat-icon">
                                     <span class="nsd-mark nsd-mark-ram" aria-hidden="true"></span>
                                 </div>
@@ -108,7 +97,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div class="default-stat-item default-stat-network">
+                            <div v-if="showNetworkMetric" class="default-stat-item default-stat-network">
                                 <div class="default-stat-icon">
                                     <span class="nsd-mark nsd-mark-network" aria-hidden="true"></span>
                                 </div>
@@ -854,11 +843,14 @@ const isHighUpload = ref(false);
 // 网络状态指示灯：good(绿), warning(黄), error(红)
 const networkStatus = ref<'good' | 'warning' | 'error'>('good');
 
-const DASHBOARD_MODES_ENABLED = false;
+const DASHBOARD_MODES_ENABLED = true;
 
-// 系统硬件监控相关保留数据结构，但音乐-only 模式不再启用默认/游戏看板。
-const isHardwareMonEnabled = ref(false);
-const gameFps = ref('--');
+const isHardwareMonEnabled = ref(localStorage.getItem('nsd_hardware_mon') === 'true');
+const isLyricsEnabled = ref(localStorage.getItem('nsd_show_lyrics') !== 'false');
+const showCpuMetric = ref(localStorage.getItem('nsd_show_cpu') !== 'false');
+const showGpuMetric = ref(localStorage.getItem('nsd_show_gpu') !== 'false');
+const showMemoryMetric = ref(localStorage.getItem('nsd_show_memory') !== 'false');
+const showNetworkMetric = ref(localStorage.getItem('nsd_show_network') !== 'false');
 const cpuUsage = ref('0%');
 const cpuTemp = ref('--°C');
 const cpuFan = ref('--');
@@ -894,7 +886,6 @@ let fallbackLyricSyncedAt = 0;
 const lyricLines = ref<SyncedLyricLine[]>([]);
 const lyricsSource = ref('');
 const lyricOffsetMs = ref(Number(localStorage.getItem('nsd_lyric_offset_ms') || '0'));
-const isFullscreenActivity = ref(false);
 let isClickingToggle = false;
 // 流光边框默认状态完全镜像音乐控制器（只要音乐控制器开着它就开，关了就一起关）
 const isGlowBorderEnabled = ref(localStorage.getItem('nsd_glow_border') !== 'false');
@@ -1201,7 +1192,7 @@ const upcomingLyricLine = computed(() => {
 });
 
 const displayLyricLine = computed(() => activeLyricLine.value || upcomingLyricLine.value);
-const hasDisplayLyricLine = computed(() => displayLyricLine.value.length > 0);
+const hasDisplayLyricLine = computed(() => isLyricsEnabled.value && displayLyricLine.value.length > 0);
 const isUpcomingLyricLine = computed(() => !activeLyricLine.value && upcomingLyricLine.value.length > 0);
 const musicLyricViewportRef = ref<HTMLElement | null>(null);
 const musicLyricTextRef = ref<HTMLElement | null>(null);
@@ -1472,12 +1463,18 @@ const musicTitleTextRef = ref<HTMLElement | null>(null);
 const isTrackTitleOverflowing = ref(false);
 let titleMeasureFrame: number | null = null;
 const isLongTrackTitle = computed(() => isTrackTitleOverflowing.value);
-const isHardwarePrimary = computed(() => {
-    void isHardwareMonEnabled.value;
-    void isFullscreenActivity.value;
-    return false;
-});
 const isMusicPrimary = computed(() => isMusicCtlEnabled.value && hasMusicSession.value);
+const visibleHardwareMetricCount = computed(() =>
+    Number(showCpuMetric.value)
+    + Number(showGpuMetric.value) * 2
+    + Number(showMemoryMetric.value)
+    + Number(showNetworkMetric.value)
+);
+const isHardwarePrimary = computed(() =>
+    isHardwareMonEnabled.value
+    && visibleHardwareMetricCount.value > 0
+    && !isMusicPrimary.value
+);
 
 function scheduleTrackTitleMeasure() {
     if (titleMeasureFrame !== null) {
@@ -1508,16 +1505,18 @@ const isSplitActivity = computed(() => false);
 const isDefaultSpeedPrimary = computed(() => false);
 const showFlowBorder = computed(() =>
     isGlowBorderEnabled.value
-    && (isMsgActive.value || isMusicPrimary.value)
+    && (isMsgActive.value || isMusicPrimary.value || isHardwarePrimary.value)
 );
 const showHardwareBackdropGlow = computed(() =>
-    false
+    isHardwarePrimary.value && isGlowBorderEnabled.value
 );
 const showDashboardFillGlow = computed(() =>
-    false
+    isHardwarePrimary.value && isGlowBorderEnabled.value
 );
 const reportedIslandVisible = ref(false);
-const shouldDisplayIsland = computed(() => isIslandEnabled.value && (isMsgActive.value || isMusicPrimary.value));
+const shouldDisplayIsland = computed(() =>
+    isIslandEnabled.value && (isMsgActive.value || isMusicPrimary.value || isHardwarePrimary.value)
+);
 
 const reportIslandStatus = async (visible: boolean) => {
     reportedIslandVisible.value = visible;
@@ -1602,53 +1601,12 @@ const handleMusicBoxLeave = () => {
 
 let lastRx = 0;
 let lastTx = 0;
+let lastSpeedSampleAt = 0;
 let speedTimer: number;
 let lyricTimer: number | null = null;
 let pingTimer: number | null = null;
 let visibilityGuardTimer: number | null = null;
 let systemStatusTimer: number | null = null;
-let fpsRafId: number | null = null;
-let fpsSampleStart = 0;
-let fpsFrameCount = 0;
-
-const stopGameFpsEstimator = () => {
-    if (fpsRafId !== null) {
-        cancelAnimationFrame(fpsRafId);
-        fpsRafId = null;
-    }
-    fpsSampleStart = 0;
-    fpsFrameCount = 0;
-    gameFps.value = '--';
-};
-
-const runGameFpsEstimator = (time: number) => {
-    if (!isHardwarePrimary.value) {
-        stopGameFpsEstimator();
-        return;
-    }
-
-    if (fpsSampleStart === 0) {
-        fpsSampleStart = time;
-        fpsFrameCount = 0;
-    }
-
-    fpsFrameCount += 1;
-    const elapsed = time - fpsSampleStart;
-    if (elapsed >= 1000) {
-        gameFps.value = String(Math.max(1, Math.round((fpsFrameCount * 1000) / elapsed)));
-        fpsSampleStart = time;
-        fpsFrameCount = 0;
-    }
-
-    fpsRafId = requestAnimationFrame(runGameFpsEstimator);
-};
-
-const startGameFpsEstimator = () => {
-    if (fpsRafId !== null) return;
-    fpsSampleStart = 0;
-    fpsFrameCount = 0;
-    fpsRafId = requestAnimationFrame(runGameFpsEstimator);
-};
 
 // 防抖控制变量
 let lowTrafficStartTime = Date.now();
@@ -1664,9 +1622,11 @@ const formatSpeed = (bytes: number) => {
 const fetchSpeedStats = async () => {
     try {
         const [currentRx, currentTx] = await invoke<[number, number]>('get_network_stats');
+        const sampledAt = performance.now();
         if (lastRx !== 0) {
-            const rxDiff = currentRx - lastRx;
-            const txDiff = currentTx - lastTx;
+            const elapsedSeconds = Math.max(0.25, (sampledAt - lastSpeedSampleAt) / 1000);
+            const rxDiff = Math.max(0, (currentRx - lastRx) / elapsedSeconds);
+            const txDiff = Math.max(0, (currentTx - lastTx) / elapsedSeconds);
 
             downloadSpeed.value = formatSpeed(rxDiff);
             uploadSpeed.value = formatSpeed(txDiff);
@@ -1687,6 +1647,7 @@ const fetchSpeedStats = async () => {
         }
         lastRx = currentRx;
         lastTx = currentTx;
+        lastSpeedSampleAt = sampledAt;
     } catch (error) {
         console.error('流量获取失败:', error);
     }
@@ -1735,14 +1696,6 @@ const syncHardwareStats = async () => {
         ramMemory.value = formatSystemMemory(stats.usedMemory, stats.totalMemory);
     } catch (err) {
         console.error('获取硬件信息失败:', err);
-    }
-};
-
-const syncForegroundActivity = async () => {
-    try {
-        isFullscreenActivity.value = await invoke<boolean>('is_foreground_fullscreen');
-    } catch {
-        isFullscreenActivity.value = false;
     }
 };
 
@@ -2089,8 +2042,11 @@ const COMPACT_HEIGHT = 42;
 const MESSAGE_WIDTH = 330;
 const MESSAGE_HEIGHT = COMPACT_HEIGHT;
 const DEFAULT_DASHBOARD_WIDTH = 820;
-const HARDWARE_WIDTH = 910;
+const HARDWARE_WIDTH = 800;
 const SPLIT_ACTIVITY_WIDTH = 970;
+const hardwareTargetWidth = computed(() =>
+    Math.min(HARDWARE_WIDTH, Math.max(COMPACT_WIDTH, 38 + visibleHardwareMetricCount.value * 146))
+);
 const WINDOW_SAFE_PADDING_X = 28;
 
 const getWindowLogicalWidth = (islandWidth: number) => islandWidth + WINDOW_SAFE_PADDING_X * 2;
@@ -2100,7 +2056,7 @@ const getWindowPhysicalHeight = (islandHeight: number, scaleFactor: number) =>
     Math.ceil(islandHeight * scaleFactor);
 
 // 1. 新增：控制 DOM 真正的高宽变量与消息数据
-const currentWidth = ref(DEFAULT_DASHBOARD_WIDTH);
+const currentWidth = ref(isHardwarePrimary.value ? hardwareTargetWidth.value : COMPACT_WIDTH);
 const currentHeight = ref(COMPACT_HEIGHT);
 const isMsgActive = ref(false);
 const msgTitle = ref('');
@@ -2226,23 +2182,16 @@ const syncActivitySize = () => {
     if (isMsgActive.value) return;
 
     const targetWidth = isHardwarePrimary.value
-        ? (isSplitActivity.value ? SPLIT_ACTIVITY_WIDTH : HARDWARE_WIDTH)
+        ? (isSplitActivity.value ? SPLIT_ACTIVITY_WIDTH : hardwareTargetWidth.value)
         : (isDefaultSpeedPrimary.value ? DEFAULT_DASHBOARD_WIDTH : COMPACT_WIDTH);
 
     animateIslandSize(targetWidth, COMPACT_HEIGHT);
 };
 
-watch([isHardwarePrimary, showMiniMusicBubble, isMusicPrimary, isDefaultSpeedPrimary, isMsgActive], syncActivitySize);
-watch(isHardwarePrimary, (active) => {
-    if (active) {
-        startGameFpsEstimator();
-    } else {
-        stopGameFpsEstimator();
-    }
-}, { immediate: true });
+watch([isHardwarePrimary, hardwareTargetWidth, showMiniMusicBubble, isMusicPrimary, isDefaultSpeedPrimary, isMsgActive], syncActivitySize);
 
 // 引入你的默认图标作为兜底
-import defaultLogo from '../assets/logo.png';
+import defaultLogo from '../assets/flowisland-logo.svg';
 const currentMsgIcon = ref(defaultLogo);
 
 // 极简版图标映射器 (你可以随时去 iconfont 找喜欢的图标放进 assets)
@@ -2398,6 +2347,26 @@ onMounted(async () => {
         islandTheme.value = event.payload.theme;
     });
 
+    await listen<{ enabled: boolean }>('control-lyrics-visibility', (event) => {
+        isLyricsEnabled.value = event.payload.enabled;
+        localStorage.setItem('nsd_show_lyrics', String(event.payload.enabled));
+        scheduleTrackTitleMeasure();
+        scheduleLyricLineMeasure();
+    });
+
+    await listen<{ cpu: boolean; gpu: boolean; memory: boolean; network: boolean }>('control-monitor-metrics', async (event) => {
+        const { cpu, gpu, memory, network } = event.payload;
+        showCpuMetric.value = cpu;
+        showGpuMetric.value = gpu;
+        showMemoryMetric.value = memory;
+        showNetworkMetric.value = network;
+        localStorage.setItem('nsd_show_cpu', String(cpu));
+        localStorage.setItem('nsd_show_gpu', String(gpu));
+        localStorage.setItem('nsd_show_memory', String(memory));
+        localStorage.setItem('nsd_show_network', String(network));
+        await syncIslandVisibility();
+    });
+
     await listen<{ offsetMs: number }>('control-lyric-offset', (event) => {
         const nextOffset = clamp(Number(event.payload.offsetMs) || 0, -3000, 3000);
         lyricOffsetMs.value = nextOffset;
@@ -2443,16 +2412,18 @@ onMounted(async () => {
     }
 
     // 监听来自控制台的系统硬件监控开关
-    await listen<{ enabled: boolean }>('control-hardware-mon', (event) => {
-        void event;
-        isHardwareMonEnabled.value = false;
-        localStorage.setItem('nsd_hardware_mon', 'false');
+    await listen<{ enabled: boolean }>('control-hardware-mon', async (event) => {
+        isHardwareMonEnabled.value = event.payload.enabled;
+        localStorage.setItem('nsd_hardware_mon', String(event.payload.enabled));
+        if (event.payload.enabled) {
+            await Promise.all([fetchSpeedStats(), syncHardwareStats()]);
+        }
+        await syncIslandVisibility();
     });
 
-    if (DASHBOARD_MODES_ENABLED) {
+    if (DASHBOARD_MODES_ENABLED && isHardwareMonEnabled.value) {
         fetchSpeedStats();
         checkNetworkLatency();
-        syncForegroundActivity();
     }
     if (isMusicCtlEnabled.value) {
         await syncMusicStatus();
@@ -2479,9 +2450,8 @@ onMounted(async () => {
             keepIslandWindowPresent().catch(() => { });
         }
 
-        if (DASHBOARD_MODES_ENABLED) {
+        if (DASHBOARD_MODES_ENABLED && isHardwareMonEnabled.value) {
             fetchSpeedStats();
-            await syncForegroundActivity();
         }
         if (isMusicCtlEnabled.value) {
             await syncMusicStatus(); // 当音乐控制器启用时，每秒顺带检查音乐会话
@@ -2553,7 +2523,9 @@ onMounted(async () => {
 
     // 音乐-only 模式不再启用默认看板的 Ping 指示灯。
     if (DASHBOARD_MODES_ENABLED) {
-        pingTimer = setInterval(checkNetworkLatency, 5500) as unknown as number;
+        pingTimer = setInterval(() => {
+            if (isHardwareMonEnabled.value) checkNetworkLatency();
+        }, 5500) as unknown as number;
     }
 
     // 监听控制台发来的显隐调度指令
@@ -2593,7 +2565,6 @@ onUnmounted(() => {
     window.removeEventListener('resize', scheduleLyricLineMeasure);
     document.removeEventListener('visibilitychange', scheduleIslandRecoveryBurst);
     islandThemeMedia?.removeEventListener('change', handleIslandSystemThemeUpdate);
-    stopGameFpsEstimator();
     stopHideTimer();
 });
 </script>

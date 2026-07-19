@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">FlowIsland</title>
+  <desc id="desc">A minimal flowing F mark with a coral motion dot.</desc>
+  <rect width="512" height="512" rx="124" fill="#F7F4EE"/>
+  <path fill="#191919" d="M126 112h74v288h-74z"/>
+  <rect x="126" y="112" width="270" height="74" rx="37" fill="#191919"/>
+  <rect x="126" y="225" width="198" height="74" rx="37" fill="#191919"/>
+  <circle cx="375" cy="262" r="38" fill="#FF5A47"/>
+</svg>
