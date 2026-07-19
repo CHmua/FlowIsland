@@ -49,8 +49,8 @@
             </aside>
 
             <main class="main-content">
-                <section v-show="activeSection === 'island'" class="page-layout has-preview">
-                    <div class="settings-pane">
+                <section v-show="activeSection === 'island'" class="page-layout single-page">
+                    <div class="settings-pane full">
                         <PageHeader title="灵动岛" desc="管理桌面灵动岛的显示、行为和内容">
                             <div class="head-toggle">
                                 <span>启用灵动岛</span>
@@ -62,13 +62,6 @@
                         </PageHeader>
 
                         <SettingGroup title="外观" eyebrow="Appearance">
-                            <div class="color-strip">
-                                <button v-for="color in accentColors" :key="color" class="swatch"
-                                    :class="{ 'is-active': color === selectedAccent }"
-                                    :style="{ '--swatch': color }" @click="selectedAccent = color"
-                                    :aria-label="`选择 ${color}`"></button>
-                                <button class="swatch custom" aria-label="自定义颜色">+</button>
-                            </div>
                             <SettingRow title="主题模式" desc="决定灵动岛和控制台的基础明暗关系">
                                 <div class="segmented">
                                     <button :class="{ 'is-active': islandTheme === 'black' }"
@@ -81,12 +74,6 @@
                             </SettingRow>
                             <SettingRow title="透明度" desc="默认 30%，音乐场景更轻盈">
                                 <RangeControl v-model="opacity" min="0" max="100" suffix="%" />
-                            </SettingRow>
-                            <SettingRow title="圆角" desc="控制胶囊圆角和展开态圆角">
-                                <RangeControl v-model="islandRadius" min="20" max="56" suffix="px" />
-                            </SettingRow>
-                            <SettingRow title="显示阴影" desc="只保留轻微柔光，不做过强外发光">
-                                <UiSwitch v-model="showIslandShadow" />
                             </SettingRow>
                         </SettingGroup>
 
@@ -131,143 +118,41 @@
                             <SettingRow title="消息模式" desc="平时隐藏，收到消息后以岛形态弹出">
                                 <UiSwitch v-model="msgModeEnabled" @change="toggleMsgMode" />
                             </SettingRow>
-                            <SettingRow title="鼠标悬停展开" desc="悬停封面或通知时显示快捷操作">
-                                <UiSwitch v-model="hoverExpand" />
-                            </SettingRow>
-                            <SettingRow title="点击打开详情" desc="点击音乐封面打开对应播放器">
-                                <UiSwitch v-model="clickOpenDetail" />
-                            </SettingRow>
-                            <SettingRow title="自动隐藏" desc="空闲时降低存在感">
-                                <UiSwitch v-model="autoHideIsland" />
-                            </SettingRow>
-                            <SettingRow title="始终置顶" desc="保持在桌面窗口上层">
-                                <UiSwitch v-model="alwaysOnTop" />
-                            </SettingRow>
                             <SettingRow title="锁定位置" desc="防止误拖动">
                                 <UiSwitch v-model="pinToTaskbar" @change="togglePinTaskbar" />
                             </SettingRow>
                         </SettingGroup>
-
-                        <SettingGroup title="位置" eyebrow="Position">
-                            <div class="position-grid">
-                                <button class="position-card" :class="{ 'is-active': islandPosition === 'top' }"
-                                    @click="islandPosition = 'top'">
-                                    <i></i><span>顶部居中</span>
-                                </button>
-                                <button class="position-card" :class="{ 'is-active': islandPosition === 'taskbar' }"
-                                    @click="islandPosition = 'taskbar'">
-                                    <i></i><span>任务栏右侧</span>
-                                </button>
-                                <button class="position-card" :class="{ 'is-active': islandPosition === 'custom' }"
-                                    @click="islandPosition = 'custom'">
-                                    <i></i><span>自定义位置</span>
-                                </button>
-                            </div>
-                            <SettingRow title="多显示器" desc="当前显示器 1 · 1920 × 1080">
-                                <button class="secondary-btn" @click="showNotReady('多显示器选择')">选择显示器</button>
-                            </SettingRow>
-                            <SettingRow title="恢复位置" desc="将灵动岛回到默认屏幕顶部">
-                                <button class="ghost-btn" @click="showNotReady('恢复默认位置')">
-                                    <RotateCcw :size="15" />恢复默认
-                                </button>
-                            </SettingRow>
-                        </SettingGroup>
                     </div>
-
-                    <PreviewPanel :mode="previewMode" :running="previewRunning" @change="previewMode = $event" />
                 </section>
 
                 <section v-show="activeSection === 'notify'" class="page-layout single-page">
                     <div class="settings-pane full">
-                        <PageHeader title="通知与消息" desc="控制系统通知、来源应用和消息岛弹出方式" />
-                        <div class="two-column-page">
-                            <div>
-                                <SettingGroup title="通知接收" eyebrow="Rules">
-                                    <SettingRow title="启用系统通知" desc="监听 Windows 通知中心与任务栏提醒">
-                                        <UiSwitch v-model="enableMsgNotify" @change="toggleMsgNotify" />
-                                    </SettingRow>
-                                    <SettingRow title="通知显示时长" desc="消息岛展开后保持的时间">
-                                        <RangeControl v-model="notificationDuration" min="2" max="8" suffix="s" />
-                                    </SettingRow>
-                                    <SettingRow title="隐私模式" desc="隐藏正文，仅显示来源应用">
-                                        <UiSwitch v-model="privacyMode" />
-                                    </SettingRow>
-                                    <SettingRow title="勿扰模式" desc="全屏或演示时自动降低干扰">
-                                        <UiSwitch v-model="dndMode" />
-                                    </SettingRow>
-                                </SettingGroup>
-
-                                <SettingGroup title="应用白名单" eyebrow="Sources">
-                                    <div class="app-list">
-                                        <div v-for="source in notificationSources" :key="source.name" class="app-source">
-                                            <span>{{ source.name.slice(0, 1) }}</span>
-                                            <div>
-                                                <strong>{{ source.name }}</strong>
-                                                <p>{{ source.enabled ? '允许弹出消息岛' : '仅记录，不弹出' }}</p>
-                                            </div>
-                                            <UiSwitch v-model="source.enabled" />
-                                        </div>
-                                    </div>
-                                </SettingGroup>
-                            </div>
-                            <SidePreview title="通知预览">
-                                <MockIsland mode="notify" />
-                                <p>通知岛在空闲时不常驻，收到消息后从音乐岛旁轻微展开。</p>
-                            </SidePreview>
-                        </div>
+                        <PageHeader title="通知与消息" desc="开启或关闭 Windows 系统消息岛提醒" />
+                        <SettingGroup title="通知接收" eyebrow="Rules">
+                            <SettingRow title="启用系统通知" desc="监听 Windows 通知中心、任务栏提醒和系统状态变化">
+                                <UiSwitch v-model="enableMsgNotify" @change="toggleMsgNotify" />
+                            </SettingRow>
+                        </SettingGroup>
                     </div>
                 </section>
 
                 <section v-show="activeSection === 'music'" class="page-layout single-page">
                     <div class="settings-pane full">
-                        <PageHeader title="音乐与歌词" desc="音乐识别、歌词匹配和播放状态的实验性控制" />
-                        <div class="two-column-page">
-                            <div>
-                                <SettingGroup title="音乐识别" eyebrow="Experimental">
-                                    <SettingRow title="音乐识别" desc="检测主流音乐播放器的媒体会话">
-                                        <UiSwitch v-model="enableMusicCtrl" />
-                                    </SettingRow>
-                                    <SettingRow title="当前播放器" desc="网易云音乐 · 已识别封面和播放状态">
-                                        <button class="secondary-btn" @click="showNotReady('重新识别播放器')">重新识别</button>
-                                    </SettingRow>
-                                    <SettingRow title="浏览器视频" desc="默认关闭，避免观影时常驻显示">
-                                        <UiSwitch v-model="browserVideoEnabled" />
-                                    </SettingRow>
-                                </SettingGroup>
+                        <PageHeader title="音乐与歌词" desc="管理媒体会话识别、歌词显示与同步偏移" />
+                        <SettingGroup title="音乐识别" eyebrow="Experimental">
+                            <SettingRow title="音乐识别" desc="检测主流音乐播放器的 Windows 媒体会话">
+                                <UiSwitch v-model="enableMusicCtrl" />
+                            </SettingRow>
+                        </SettingGroup>
 
-                                <SettingGroup title="歌词" eyebrow="Lyrics">
-                                    <SettingRow title="歌词来源" desc="LRCLIB / 平台匹配 / 本地缓存">
-                                        <select v-model="lyricsSource" class="select">
-                                            <option value="auto">自动选择</option>
-                                            <option value="lrclib">LRCLIB</option>
-                                            <option value="platform">播放器平台</option>
-                                        </select>
-                                    </SettingRow>
-                                    <SettingRow title="歌词匹配状态" desc="当前歌曲已匹配，偏移可手动微调">
-                                        <span class="status-pill ok">已同步</span>
-                                    </SettingRow>
-                                    <SettingRow title="歌词样式" desc="双行显示，超长歌词横向滚动">
-                                        <div class="segmented small">
-                                            <button :class="{ 'is-active': lyricsStyle === 'double' }"
-                                                @click="lyricsStyle = 'double'">双行</button>
-                                            <button :class="{ 'is-active': lyricsStyle === 'single' }"
-                                                @click="lyricsStyle = 'single'">单行</button>
-                                        </div>
-                                    </SettingRow>
-                                    <SettingRow title="同步偏移" :desc="`当前 ${lyricOffsetMs}ms，手动快进后自动重新校准`">
-                                        <RangeControl v-model="lyricOffsetMs" min="-3000" max="3000" step="100" suffix="ms" />
-                                    </SettingRow>
-                                </SettingGroup>
-                            </div>
-                            <SidePreview title="当前歌词预览">
-                                <MockIsland mode="lyric" />
-                                <div class="lyric-stack">
-                                    <p>When the moonlight starts to fade</p>
-                                    <strong>穿过云层的缝隙</strong>
-                                    <p>落在你的掌心</p>
-                                </div>
-                            </SidePreview>
-                        </div>
+                        <SettingGroup title="歌词" eyebrow="Lyrics">
+                            <SettingRow title="显示歌词" desc="匹配到同步歌词时在歌曲名称下方显示当前句">
+                                <UiSwitch v-model="showLyrics" />
+                            </SettingRow>
+                            <SettingRow title="同步偏移" :desc="`当前 ${lyricOffsetMs}ms，用于手动微调歌词时间`">
+                                <RangeControl v-model="lyricOffsetMs" min="-3000" max="3000" step="100" suffix="ms" />
+                            </SettingRow>
+                        </SettingGroup>
                     </div>
                 </section>
 
@@ -307,25 +192,12 @@
                             </div>
                         </SettingGroup>
                         <SettingGroup title="监控显示" eyebrow="Display">
-                            <SettingRow title="刷新频率" desc="低频采样，减少后台占用">
+                            <SettingRow title="状态页刷新频率" desc="控制此页面硬件数据的读取间隔">
                                 <select v-model="monitorRefreshRate" class="select">
                                     <option value="2">2 秒</option>
                                     <option value="1">1 秒</option>
                                     <option value="5">5 秒</option>
                                 </select>
-                            </SettingRow>
-                            <SettingRow title="显示单位" desc="网络速度使用自动单位">
-                                <div class="segmented small">
-                                    <button :class="{ 'is-active': monitorUnit === 'auto' }"
-                                        @click="monitorUnit = 'auto'">自动</button>
-                                    <button :class="{ 'is-active': monitorUnit === 'kb' }"
-                                        @click="monitorUnit = 'kb'">KB/s</button>
-                                    <button :class="{ 'is-active': monitorUnit === 'mb' }"
-                                        @click="monitorUnit = 'mb'">MB/s</button>
-                                </div>
-                            </SettingRow>
-                            <SettingRow title="安全模式" desc="避免注入或读取游戏进程内存">
-                                <UiSwitch v-model="safeMonitorMode" />
                             </SettingRow>
                         </SettingGroup>
                     </div>
@@ -333,95 +205,28 @@
 
                 <section v-show="activeSection === 'appearance'" class="page-layout single-page">
                     <div class="settings-pane full">
-                        <PageHeader title="外观与显示" desc="控制应用主题、品牌颜色、动画和界面缩放" />
-                        <div class="two-column-page">
-                            <div>
-                                <SettingGroup title="主题" eyebrow="Theme">
-                                    <SettingRow title="应用主题" desc="控制台默认跟随系统，也可强制深浅色">
-                                        <div class="segmented">
-                                            <button :class="{ 'is-active': themeMode === 'dark' }"
-                                                @click="setThemeMode('dark')">深色</button>
-                                            <button :class="{ 'is-active': themeMode === 'light' }"
-                                                @click="setThemeMode('light')">浅色</button>
-                                            <button :class="{ 'is-active': themeMode === 'system' }"
-                                                @click="setThemeMode('system')">系统</button>
-                                        </div>
-                                    </SettingRow>
-                                    <SettingRow title="品牌颜色" desc="用于按钮、选中态和轻量强调">
-                                        <div class="color-strip compact">
-                                            <button v-for="color in accentColors.slice(0, 4)" :key="`appearance-${color}`"
-                                                class="swatch" :class="{ 'is-active': color === selectedAccent }"
-                                                :style="{ '--swatch': color }" @click="selectedAccent = color"></button>
-                                        </div>
-                                    </SettingRow>
-                                    <SettingRow title="窗口透明度" desc="只影响控制台背景，不影响文字对比">
-                                        <RangeControl v-model="consoleOpacity" min="70" max="100" suffix="%" />
-                                    </SettingRow>
-                                </SettingGroup>
-
-                                <SettingGroup title="可读性" eyebrow="Comfort">
-                                    <SettingRow title="界面缩放" desc="适配不同分辨率和显示缩放">
-                                        <RangeControl v-model="uiScale" min="85" max="115" suffix="%" />
-                                    </SettingRow>
-                                    <SettingRow title="字体大小" desc="设置项和预览文本同步调整">
-                                        <RangeControl v-model="fontScale" min="90" max="115" suffix="%" />
-                                    </SettingRow>
-                                    <SettingRow title="减少动态效果" desc="关闭不必要的过渡和弹性动画">
-                                        <UiSwitch v-model="reduceMotion" />
-                                    </SettingRow>
-                                </SettingGroup>
-                            </div>
-                            <div class="theme-preview">
-                                <span>外观预览</span>
-                                <div class="mini-window">
-                                    <i></i><i></i><i></i>
-                                    <div></div><div></div><div></div>
+                        <PageHeader title="外观与显示" desc="选择控制台和灵动岛使用的深浅主题" />
+                        <SettingGroup title="主题" eyebrow="Theme">
+                            <SettingRow title="应用主题" desc="控制台默认跟随系统，也可强制深浅色">
+                                <div class="segmented">
+                                    <button :class="{ 'is-active': themeMode === 'dark' }"
+                                        @click="setThemeMode('dark')">深色</button>
+                                    <button :class="{ 'is-active': themeMode === 'light' }"
+                                        @click="setThemeMode('light')">浅色</button>
+                                    <button :class="{ 'is-active': themeMode === 'system' }"
+                                        @click="setThemeMode('system')">系统</button>
                                 </div>
-                            </div>
-                        </div>
+                            </SettingRow>
+                        </SettingGroup>
                     </div>
                 </section>
 
                 <section v-show="activeSection === 'general'" class="page-layout single-page">
                     <div class="settings-pane full">
-                        <PageHeader title="通用设置" desc="管理启动、托盘、语言和配置文件" />
-                        <SettingGroup title="启动与窗口" eyebrow="Startup">
+                        <PageHeader title="通用设置" desc="管理 FlowIsland 的系统启动行为" />
+                        <SettingGroup title="启动" eyebrow="Startup">
                             <SettingRow title="开机启动" desc="登录 Windows 后自动启动 FlowIsland">
                                 <UiSwitch v-model="autoStart" @change="toggleAutoStart" />
-                            </SettingRow>
-                            <SettingRow title="最小化到托盘" desc="关闭主窗口后保留后台运行">
-                                <UiSwitch v-model="minimizeToTray" />
-                            </SettingRow>
-                            <SettingRow title="关闭按钮行为" desc="默认隐藏到托盘">
-                                <select v-model="closeBehavior" class="select">
-                                    <option value="tray">隐藏到托盘</option>
-                                    <option value="exit">直接退出</option>
-                                </select>
-                            </SettingRow>
-                            <SettingRow title="自动检查更新" desc="每天最多检查一次新版">
-                                <UiSwitch v-model="autoCheckUpdate" />
-                            </SettingRow>
-                        </SettingGroup>
-
-                        <SettingGroup title="配置" eyebrow="Config">
-                            <SettingRow title="语言" desc="当前为简体中文">
-                                <select v-model="language" class="select">
-                                    <option value="zh-CN">简体中文</option>
-                                    <option value="en-US">English</option>
-                                </select>
-                            </SettingRow>
-                            <SettingRow title="导入配置" desc="从备份文件恢复设置">
-                                <button class="secondary-btn" @click="showNotReady('导入配置')">
-                                    <Upload :size="15" />导入
-                                </button>
-                            </SettingRow>
-                            <SettingRow title="导出配置" desc="保存当前设置到本地文件">
-                                <button class="secondary-btn" @click="showNotReady('导出配置')">
-                                    <Download :size="15" />导出
-                                </button>
-                            </SettingRow>
-                            <SettingRow title="恢复默认设置" desc="清空本地设置并恢复初始状态">
-                                <button class="danger-btn" @click="showNotReady('恢复默认设置')">恢复</button>
                             </SettingRow>
                         </SettingGroup>
                     </div>
@@ -443,10 +248,7 @@
                             </button>
                         </div>
                         <div class="about-grid">
-                            <button @click="showNotReady('版本说明')"><FileText :size="18" />版本说明</button>
                             <button @click="openProjectRepo"><Github :size="18" />GitHub</button>
-                            <button @click="showNotReady('隐私说明')"><Shield :size="18" />隐私说明</button>
-                            <button @click="showNotReady('开源许可')"><Info :size="18" />开源许可</button>
                         </div>
                     </div>
                 </section>
@@ -494,7 +296,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, PropType, ref, watch } from 'vue';
+import { computed, defineComponent, h, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
@@ -506,8 +308,6 @@ import {
     Bell,
     CloudDownload,
     Cpu,
-    Download,
-    FileText,
     Github,
     HardDrive,
     Info,
@@ -515,12 +315,8 @@ import {
     Monitor,
     Music2,
     Palette,
-    Play,
-    RotateCcw,
     Settings,
-    Shield,
     Sparkles,
-    Upload,
     Wifi,
     X,
 } from 'lucide-vue-next';
@@ -540,8 +336,6 @@ if (localStorage.getItem(MUSIC_ONLY_DEFAULTS_KEY) !== 'true') {
 }
 
 type NavId = 'island' | 'notify' | 'music' | 'monitor' | 'appearance' | 'general' | 'about';
-type PreviewMode = 'music' | 'lyric' | 'notify' | 'monitor';
-type PositionMode = 'top' | 'taskbar' | 'custom';
 type IslandThemeMode = 'black' | 'white' | 'system';
 type ConsoleThemeMode = 'dark' | 'light' | 'system';
 type HardwareStats = {
@@ -565,10 +359,9 @@ const initialIslandTheme: IslandThemeMode = savedIslandTheme === 'black' || save
     : 'system';
 
 const activeSection = ref<NavId>('island');
-const previewMode = ref<PreviewMode>('music');
 const isWidgetVisible = ref(false);
 const autoStart = ref(false);
-const appVersion = ref('2.3.18');
+const appVersion = ref('2.3.19');
 const uploadSpeed = ref('0 B/s');
 const downloadSpeed = ref('0 B/s');
 const opacity = ref(Number(localStorage.getItem('nsd_island_opacity') || '30'));
@@ -599,36 +392,12 @@ const updateVersion = ref('');
 const updateError = ref('');
 const updateDownloadedText = ref('准备下载');
 
-const selectedAccent = ref('#4C8DFF');
-const islandRadius = ref(38);
-const showIslandShadow = ref(true);
 const showLyrics = ref(localStorage.getItem('nsd_show_lyrics') !== 'false');
 const showNetwork = ref(localStorage.getItem('nsd_show_network') !== 'false');
 const showCpu = ref(localStorage.getItem('nsd_show_cpu') !== 'false');
 const showGpu = ref(localStorage.getItem('nsd_show_gpu') !== 'false');
 const showMemory = ref(localStorage.getItem('nsd_show_memory') !== 'false');
-const hoverExpand = ref(true);
-const clickOpenDetail = ref(true);
-const autoHideIsland = ref(true);
-const alwaysOnTop = ref(true);
-const islandPosition = ref<PositionMode>('top');
-const notificationDuration = ref(5);
-const privacyMode = ref(false);
-const dndMode = ref(true);
-const browserVideoEnabled = ref(false);
-const lyricsSource = ref('auto');
-const lyricsStyle = ref<'double' | 'single'>('double');
 const monitorRefreshRate = ref(localStorage.getItem('nsd_monitor_refresh_rate') || '2');
-const monitorUnit = ref('auto');
-const safeMonitorMode = ref(true);
-const consoleOpacity = ref(92);
-const uiScale = ref(100);
-const fontScale = ref(100);
-const reduceMotion = ref(false);
-const minimizeToTray = ref(true);
-const closeBehavior = ref('tray');
-const autoCheckUpdate = ref(true);
-const language = ref('zh-CN');
 const monitorCpuUsage = ref('--');
 const monitorCpuDetail = ref('正在读取');
 const monitorMemoryUsage = ref('--');
@@ -637,18 +406,6 @@ const monitorGpuUsage = ref('--');
 const monitorGpuDetail = ref('正在读取');
 const monitorVramUsage = ref('--');
 const monitorVramDetail = ref('正在读取');
-const previewRunning = computed(() => previewMode.value === 'monitor'
-    ? enableHardwareMonitor.value
-    : isWidgetVisible.value);
-
-const accentColors = ['#4C8DFF', '#8B6DFF', '#45C7E8', '#F4B85A', '#4CD7A0'];
-const notificationSources = ref([
-    { name: '微信', enabled: true },
-    { name: 'QQ', enabled: true },
-    { name: '钉钉', enabled: true },
-    { name: 'Outlook', enabled: false },
-    { name: 'Telegram', enabled: false },
-]);
 
 const navItems = [
     { id: 'island' as const, label: '灵动岛', icon: Sparkles },
@@ -659,20 +416,6 @@ const navItems = [
     { id: 'general' as const, label: '通用设置', icon: Settings },
     { id: 'about' as const, label: '关于', icon: Info },
 ];
-
-const previewModes = [
-    { id: 'music' as const, label: '音乐' },
-    { id: 'lyric' as const, label: '歌词' },
-    { id: 'notify' as const, label: '通知' },
-    { id: 'monitor' as const, label: '监控' },
-];
-
-const previewLabels: Record<PreviewMode, string> = {
-    music: '音乐播放中',
-    lyric: '歌词同步中',
-    notify: '通知弹出',
-    monitor: '系统监控',
-};
 
 const dialog = ref({
     visible: false,
@@ -776,101 +519,6 @@ const RangeControl = defineComponent({
     },
 });
 
-const MockIsland = defineComponent({
-    props: {
-        mode: { type: String as PropType<PreviewMode>, required: true },
-    },
-    setup(props) {
-        return () => {
-            if (props.mode === 'music') {
-                return h('div', { class: 'mock-island mock-music' }, [
-                    h('span', { class: 'cover-art' }),
-                    h('div', { class: 'track-copy' }, [h('strong', 'Moon Halo'), h('small', '茶理理 / TetraCalyx')]),
-                    h('div', { class: 'progress-line' }, [h('i', { style: 'width:58%' })]),
-                    h('button', { class: 'round-play' }, [h(Play, { size: 14 })]),
-                    h(AudioWave),
-                ]);
-            }
-            if (props.mode === 'lyric') {
-                return h('div', { class: 'mock-island mock-lyric' }, [
-                    h('span', { class: 'cover-art lyric-cover' }),
-                    h('div', { class: 'lyric-copy' }, [h('strong', '穿过云层的缝隙'), h('small', '下一句：落在你的掌心')]),
-                    h('div', { class: 'progress-line' }, [h('i', { style: 'width:41%' })]),
-                    h(AudioWave),
-                ]);
-            }
-            if (props.mode === 'notify') {
-                return h('div', { class: 'mock-island mock-notify' }, [
-                    h('span', { class: 'app-dot' }, [h(Bell, { size: 15 })]),
-                    h('div', { class: 'notify-copy' }, [h('strong', '微信'), h('small', '收到一条新消息')]),
-                    h('button', { class: 'text-button' }, '查看'),
-                ]);
-            }
-            if (props.mode === 'monitor') {
-                const items = [];
-                if (showCpu.value) items.push(h('span', [h(Cpu, { size: 17 }), ' CPU ', h('strong', monitorCpuUsage.value)]));
-                if (showGpu.value) items.push(h('span', ['显卡 ', h('strong', monitorGpuUsage.value)]));
-                if (showMemory.value) items.push(h('span', ['内存 ', h('strong', monitorMemoryUsage.value)]));
-                if (showNetwork.value) items.push(h('span', ['网络 ', h('strong', downloadSpeed.value)]));
-                if (items.length === 0) items.push(h('span', '请至少选择一个监控项目'));
-                return h('div', { class: 'mock-island mock-monitor' }, items);
-            }
-            return h('div', { class: 'mock-island' }, '预览不可用');
-        };
-    },
-});
-
-const AudioWave = defineComponent({
-    setup() {
-        return () => h('span', { class: 'audio-wave' }, [1, 2, 3, 4].map((index) => h('i', { class: `bar-${index}` })));
-    },
-});
-
-const PreviewPanel = defineComponent({
-    props: {
-        mode: { type: String as PropType<PreviewMode>, required: true },
-        running: { type: Boolean, required: true },
-    },
-    emits: ['change'],
-    setup(props, { emit: emitLocal }) {
-        return () => h('aside', { class: 'preview-panel' }, [
-            h('div', { class: 'preview-head' }, [
-                h('div', [h('span', '实时预览'), h('h3', previewLabels[props.mode])]),
-                h('div', { class: 'live-dot' }, [h('i', { class: props.running ? '' : 'is-muted' }), props.running ? '运行中' : '已关闭']),
-            ]),
-            h('div', { class: 'preview-stage' }, [
-                h('div', { class: 'desktop-frame' }, [
-                    h('div', { class: 'wallpaper-glow' }),
-                    h(MockIsland, { mode: props.mode }),
-                    h('div', { class: 'taskbar-preview' }, [h('span'), h('span'), h('span'), h('strong', '14:30')]),
-                ]),
-            ]),
-            h('div', { class: 'preview-tabs' }, previewModes.map((mode) =>
-                h('button', {
-                    class: ['preview-tab', props.mode === mode.id ? 'is-active' : ''],
-                    onClick: () => emitLocal('change', mode.id),
-                }, mode.label)
-            )),
-            h('div', { class: 'preview-note' }, [
-                h(Sparkles, { size: 17 }),
-                h('p', '预览用于确认视觉和状态表现；正式功能仍由现有 Tauri 事件和系统能力驱动。'),
-            ]),
-        ]);
-    },
-});
-
-const SidePreview = defineComponent({
-    props: {
-        title: { type: String, required: true },
-    },
-    setup(props, { slots }) {
-        return () => h('aside', { class: 'side-preview-card' }, [
-            h('span', props.title),
-            slots.default?.(),
-        ]);
-    },
-});
-
 const MetricCard = defineComponent({
     props: {
         icon: { type: String, required: true },
@@ -889,7 +537,6 @@ const MetricCard = defineComponent({
         return () => h('article', { class: 'metric-card' }, [
             h('div', { class: 'metric-icon' }, [iconByType()]),
             h('div', [h('span', props.title), h('strong', props.value), h('p', props.detail)]),
-            h('svg', { viewBox: '0 0 134 82' }, [h('path', { d: 'M6,42 L30,28 L54,38 L78,24 L102,34 L126,31' })]),
         ]);
     },
 });
@@ -1052,10 +699,6 @@ const closeWindow = async () => {
 
 const showDialog = (title: string, message: string, isConfirm = false, onConfirm: (() => void) | null = null) => {
     dialog.value = { visible: true, title, message, isConfirm, onConfirm };
-};
-
-const showNotReady = (name: string) => {
-    showDialog('功能预览', `${name} 的界面已经预留，后续可以继续接入真实功能。`);
 };
 
 const openProjectRepo = () => {
@@ -2476,7 +2119,7 @@ button {
 }
 
 .metric-card {
-    min-height: 132px;
+    min-height: 104px;
     border-radius: 16px;
     padding: 16px;
     background: #121a28;
@@ -2512,21 +2155,6 @@ button {
     margin: 4px 0 0;
     color: #8392a7;
     font-size: 11px;
-}
-
-.metric-card svg {
-    width: 134px;
-    height: 52px;
-    position: absolute;
-    right: 14px;
-    bottom: 10px;
-}
-
-.metric-card path {
-    fill: none;
-    stroke: #45c7e8;
-    stroke-width: 3;
-    stroke-linecap: round;
 }
 
 .theme-preview {
