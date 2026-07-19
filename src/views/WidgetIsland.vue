@@ -41,10 +41,10 @@
 
                     <transition @enter="onInnerEnter" @leave="onInnerLeave" :css="false">
                         <div class="speed-box default-stats-box hardware-stats-box"
-                            v-show="isHardwarePrimary && !isMsgActive" key="hardware">
+                            v-show="isHardwarePrimary && !isMsgActive" key="hardware" :style="hardwareGridStyle">
                             <div v-if="showCpuMetric" class="default-stat-item default-stat-compute">
                                 <div class="default-stat-icon">
-                                    <span class="nsd-mark nsd-mark-cpu" aria-hidden="true"></span>
+                                    <Cpu class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
                                 <div class="default-stat-copy">
                                     <div class="default-stat-title">CPU</div>
@@ -57,7 +57,7 @@
                             </div>
                             <div v-if="showGpuMetric" class="default-stat-item default-stat-compute">
                                 <div class="default-stat-icon">
-                                    <span class="nsd-mark nsd-mark-gpu" aria-hidden="true"></span>
+                                    <CircuitBoard class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
                                 <div class="default-stat-copy">
                                     <div class="default-stat-title">显卡</div>
@@ -70,7 +70,7 @@
                             </div>
                             <div v-if="showGpuMetric" class="default-stat-item default-stat-memory">
                                 <div class="default-stat-icon">
-                                    <span class="nsd-mark nsd-mark-mem" aria-hidden="true"></span>
+                                    <Database class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
                                 <div class="default-stat-copy">
                                     <div class="default-stat-title">显存</div>
@@ -82,7 +82,7 @@
                             </div>
                             <div v-if="showMemoryMetric" class="default-stat-item default-stat-memory">
                                 <div class="default-stat-icon">
-                                    <span class="nsd-mark nsd-mark-ram" aria-hidden="true"></span>
+                                    <MemoryStick class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
                                 <div class="default-stat-copy">
                                     <div class="default-stat-title">内存</div>
@@ -94,7 +94,7 @@
                             </div>
                             <div v-if="showNetworkMetric" class="default-stat-item default-stat-network">
                                 <div class="default-stat-icon">
-                                    <span class="nsd-mark nsd-mark-network" aria-hidden="true"></span>
+                                    <Wifi class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
                                 <div class="default-stat-copy">
                                     <div class="default-stat-title">网络</div>
@@ -182,7 +182,7 @@
                             key="speed">
                             <div class="default-stat-item default-stat-compute">
                                 <div class="default-stat-icon">
-                                    <span class="nsd-mark nsd-mark-cpu" aria-hidden="true"></span>
+                                    <Cpu class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
                                 <div class="default-stat-copy">
                                     <div class="default-stat-title">CPU</div>
@@ -195,7 +195,7 @@
                             </div>
                             <div class="default-stat-item default-stat-compute">
                                 <div class="default-stat-icon">
-                                    <span class="nsd-mark nsd-mark-gpu" aria-hidden="true"></span>
+                                    <CircuitBoard class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
                                 <div class="default-stat-copy">
                                     <div class="default-stat-title">显卡</div>
@@ -208,7 +208,7 @@
                             </div>
                             <div class="default-stat-item default-stat-memory">
                                 <div class="default-stat-icon">
-                                    <span class="nsd-mark nsd-mark-mem" aria-hidden="true"></span>
+                                    <Database class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
                                 <div class="default-stat-copy">
                                     <div class="default-stat-title">显存</div>
@@ -220,7 +220,7 @@
                             </div>
                             <div class="default-stat-item default-stat-memory">
                                 <div class="default-stat-icon">
-                                    <span class="nsd-mark nsd-mark-ram" aria-hidden="true"></span>
+                                    <MemoryStick class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
                                 <div class="default-stat-copy">
                                     <div class="default-stat-title">内存</div>
@@ -232,7 +232,7 @@
                             </div>
                             <div class="default-stat-item default-stat-network">
                                 <div class="default-stat-icon">
-                                    <span class="nsd-mark nsd-mark-network" aria-hidden="true"></span>
+                                    <Wifi class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
                                 <div class="default-stat-copy">
                                     <div class="default-stat-title">网络</div>
@@ -274,6 +274,7 @@ import { ref, onMounted, onUnmounted, computed, watch, nextTick, type CSSPropert
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow, currentMonitor, PhysicalPosition, LogicalPosition, PhysicalSize } from '@tauri-apps/api/window'; import { Menu, MenuItem } from '@tauri-apps/api/menu';
 import { listen, emit } from '@tauri-apps/api/event';
+import { CircuitBoard, Cpu, Database, MemoryStick, Wifi } from 'lucide-vue-next';
 
 const isIslandVisible = ref(false);
 const isMenuOpen = ref(false);
@@ -1529,9 +1530,11 @@ let lowTrafficStartTime = Date.now();
 const RED_DELAY_MS = 5000;
 
 const formatSpeed = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B/s';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB/s';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB/s';
+    const safeBytes = Number.isFinite(bytes) ? Math.max(0, bytes) : 0;
+    if (safeBytes < 1024) return `${Math.round(safeBytes)} B/s`;
+    if (safeBytes < 1024 * 1024) return `${(safeBytes / 1024).toFixed(1)} KB/s`;
+    if (safeBytes < 1024 * 1024 * 1024) return `${(safeBytes / (1024 * 1024)).toFixed(1)} MB/s`;
+    return `${(safeBytes / (1024 * 1024 * 1024)).toFixed(1)} GB/s`;
 };
 
 // 计算流量数字，并实时更新大流量状态
@@ -1962,13 +1965,21 @@ const HARDWARE_MAX_WIDTH = 920;
 const HARDWARE_LAYOUT_INSET = 56;
 const HARDWARE_ITEM_GAP = 10;
 const SPLIT_ACTIVITY_WIDTH = 970;
-const hardwareTargetWidth = computed(() => {
+const hardwareMetricWidths = computed(() => {
     const metricWidths: number[] = [];
 
     if (showCpuMetric.value) metricWidths.push(168);
     if (showGpuMetric.value) metricWidths.push(168, 136);
     if (showMemoryMetric.value) metricWidths.push(148);
     if (showNetworkMetric.value) metricWidths.push(196);
+
+    return metricWidths;
+});
+const hardwareGridStyle = computed<CSSProperties>(() => ({
+    gridTemplateColumns: hardwareMetricWidths.value.map((width) => `${width}px`).join(' '),
+}));
+const hardwareTargetWidth = computed(() => {
+    const metricWidths = hardwareMetricWidths.value;
 
     const contentWidth = metricWidths.reduce((total, width) => total + width, 0);
     const gapWidth = Math.max(0, metricWidths.length - 1) * HARDWARE_ITEM_GAP;
@@ -2745,9 +2756,23 @@ onUnmounted(() => {
 }
 
 .hardware-stats-box {
+    display: grid;
+    grid-auto-flow: column;
+    align-items: center;
+    justify-content: center;
     gap: 10px;
     padding: 0 10px;
     overflow: hidden;
+}
+
+.hardware-stats-box .default-stat-item {
+    width: 100%;
+    min-width: 0;
+}
+
+.hardware-stats-box .default-stat-copy {
+    width: 100%;
+    min-width: 0;
 }
 
 .hardware-stats-box .default-stat-values {
@@ -2800,21 +2825,23 @@ onUnmounted(() => {
 }
 
 .default-stat-icon {
-    width: 28px;
-    height: 28px;
+    width: 26px;
+    height: 26px;
     display: flex;
     align-items: center;
     justify-content: center;
-    flex: 0 0 28px;
+    flex: 0 0 26px;
     color: currentColor;
-    opacity: 0.92;
-    border-radius: 50%;
-    background:
-        radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.2), transparent 36%),
-        rgba(255, 255, 255, 0.06);
-    box-shadow:
-        inset 0 0 0 1px rgba(255, 255, 255, 0.28),
-        0 0 10px rgba(255, 255, 255, 0.06);
+    opacity: 0.94;
+    border-radius: 8px;
+    background: color-mix(in srgb, currentColor 8%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.metric-icon-glyph {
+    width: 15px;
+    height: 15px;
+    color: currentColor;
 }
 
 .nsd-mark {
