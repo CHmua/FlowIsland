@@ -51,7 +51,7 @@
             <main class="main-content">
                 <section v-show="activeSection === 'island'" class="page-layout single-page">
                     <div class="settings-pane full">
-                        <PageHeader title="灵动岛" desc="管理桌面灵动岛的显示、行为和内容">
+                        <PageHeader title="灵动岛" desc="集中设置外观、通知、窗口与启动行为">
                             <div class="head-toggle">
                                 <span>启用灵动岛</span>
                                 <label class="native-switch">
@@ -61,91 +61,51 @@
                             </div>
                         </PageHeader>
 
-                        <SettingGroup title="外观" eyebrow="Appearance">
-                            <SettingRow title="主题模式" desc="决定灵动岛和控制台的基础明暗关系">
-                                <div class="segmented">
-                                    <button :class="{ 'is-active': islandTheme === 'black' }"
-                                        @click="islandTheme = 'black'">暗色</button>
-                                    <button :class="{ 'is-active': islandTheme === 'white' }"
-                                        @click="islandTheme = 'white'">浅色</button>
-                                    <button :class="{ 'is-active': islandTheme === 'system' }"
-                                        @click="islandTheme = 'system'">跟随系统</button>
-                                </div>
-                            </SettingRow>
-                            <SettingRow title="透明度" desc="默认 30%，音乐场景更轻盈">
-                                <RangeControl v-model="opacity" min="0" max="100" suffix="%" />
-                            </SettingRow>
-                        </SettingGroup>
+                        <div class="category-grid">
+                            <SettingGroup title="显示" eyebrow="Appearance">
+                                <SettingRow title="主题模式" desc="控制灵动岛与控制台的明暗外观">
+                                    <div class="segmented">
+                                        <button :class="{ 'is-active': islandTheme === 'black' }"
+                                            @click="islandTheme = 'black'">暗色</button>
+                                        <button :class="{ 'is-active': islandTheme === 'white' }"
+                                            @click="islandTheme = 'white'">浅色</button>
+                                        <button :class="{ 'is-active': islandTheme === 'system' }"
+                                            @click="islandTheme = 'system'">跟随系统</button>
+                                    </div>
+                                </SettingRow>
+                                <SettingRow title="透明度" desc="调整灵动岛背景的可见程度">
+                                    <RangeControl v-model="opacity" min="0" max="100" suffix="%" />
+                                </SettingRow>
+                            </SettingGroup>
 
-                        <SettingGroup title="内容" eyebrow="Content">
-                            <div class="check-grid">
-                                <label class="check-item">
-                                    <input v-model="enableMusicCtrl" type="checkbox">
-                                    <span>显示音乐</span>
-                                </label>
-                                <label class="check-item">
-                                    <input v-model="showLyrics" type="checkbox">
-                                    <span>显示歌词</span>
-                                </label>
-                                <label class="check-item">
-                                    <input v-model="enableMsgNotify" type="checkbox" @change="toggleMsgNotify">
-                                    <span>系统通知</span>
-                                </label>
-                                <label class="check-item">
-                                    <input v-model="enableHardwareMonitor" type="checkbox">
-                                    <span>系统监控</span>
-                                </label>
-                                <label class="check-item">
-                                    <input v-model="showCpu" type="checkbox">
-                                    <span>CPU</span>
-                                </label>
-                                <label class="check-item">
-                                    <input v-model="showGpu" type="checkbox">
-                                    <span>显卡</span>
-                                </label>
-                                <label class="check-item">
-                                    <input v-model="showMemory" type="checkbox">
-                                    <span>内存</span>
-                                </label>
-                                <label class="check-item">
-                                    <input v-model="showNetwork" type="checkbox">
-                                    <span>网络</span>
-                                </label>
-                            </div>
-                        </SettingGroup>
+                            <SettingGroup title="通知与提醒" eyebrow="Notifications">
+                                <SettingRow title="系统通知" desc="接收 Windows 通知和系统状态提醒">
+                                    <UiSwitch v-model="enableMsgNotify" @change="toggleMsgNotify" />
+                                </SettingRow>
+                                <SettingRow title="消息模式" desc="无消息时隐藏，收到消息后弹出">
+                                    <UiSwitch v-model="msgModeEnabled" @change="toggleMsgMode" />
+                                </SettingRow>
+                            </SettingGroup>
 
-                        <SettingGroup title="行为" eyebrow="Behavior">
-                            <SettingRow title="消息模式" desc="平时隐藏，收到消息后以岛形态弹出">
-                                <UiSwitch v-model="msgModeEnabled" @change="toggleMsgMode" />
-                            </SettingRow>
-                            <SettingRow title="锁定位置" desc="防止误拖动">
-                                <UiSwitch v-model="pinToTaskbar" @change="togglePinTaskbar" />
-                            </SettingRow>
-                        </SettingGroup>
-                    </div>
-                </section>
-
-                <section v-show="activeSection === 'notify'" class="page-layout single-page">
-                    <div class="settings-pane full">
-                        <PageHeader title="通知与消息" desc="开启或关闭 Windows 系统消息岛提醒" />
-                        <SettingGroup title="通知接收" eyebrow="Rules">
-                            <SettingRow title="启用系统通知" desc="监听 Windows 通知中心、任务栏提醒和系统状态变化">
-                                <UiSwitch v-model="enableMsgNotify" @change="toggleMsgNotify" />
-                            </SettingRow>
-                        </SettingGroup>
+                            <SettingGroup title="窗口与启动" eyebrow="Window">
+                                <SettingRow title="锁定位置" desc="固定灵动岛，防止鼠标误拖动">
+                                    <UiSwitch v-model="pinToTaskbar" @change="togglePinTaskbar" />
+                                </SettingRow>
+                                <SettingRow title="开机启动" desc="登录 Windows 后自动启动 FlowIsland">
+                                    <UiSwitch v-model="autoStart" @change="toggleAutoStart" />
+                                </SettingRow>
+                            </SettingGroup>
+                        </div>
                     </div>
                 </section>
 
                 <section v-show="activeSection === 'music'" class="page-layout single-page">
                     <div class="settings-pane full">
                         <PageHeader title="音乐与歌词" desc="管理媒体会话识别、歌词显示与同步偏移" />
-                        <SettingGroup title="音乐识别" eyebrow="Experimental">
+                        <SettingGroup title="音乐与歌词" eyebrow="Media">
                             <SettingRow title="音乐识别" desc="检测主流音乐播放器的 Windows 媒体会话">
                                 <UiSwitch v-model="enableMusicCtrl" />
                             </SettingRow>
-                        </SettingGroup>
-
-                        <SettingGroup title="歌词" eyebrow="Lyrics">
                             <SettingRow title="显示歌词" desc="匹配到同步歌词时在歌曲名称下方显示当前句">
                                 <UiSwitch v-model="showLyrics" />
                             </SettingRow>
@@ -171,7 +131,7 @@
                             <MetricCard icon="drive" title="显存" :value="monitorVramUsage" :detail="monitorVramDetail" />
                             <MetricCard icon="network" title="网络" :value="downloadSpeed" :detail="`上传 ${uploadSpeed}`" />
                         </div>
-                        <SettingGroup title="显示项目" eyebrow="Metrics">
+                        <SettingGroup title="监控设置" eyebrow="Metrics">
                             <div class="check-grid">
                                 <label class="check-item">
                                     <input v-model="showCpu" type="checkbox">
@@ -190,43 +150,12 @@
                                     <span>网络</span>
                                 </label>
                             </div>
-                        </SettingGroup>
-                        <SettingGroup title="监控显示" eyebrow="Display">
                             <SettingRow title="状态页刷新频率" desc="控制此页面硬件数据的读取间隔">
                                 <select v-model="monitorRefreshRate" class="select">
                                     <option value="2">2 秒</option>
                                     <option value="1">1 秒</option>
                                     <option value="5">5 秒</option>
                                 </select>
-                            </SettingRow>
-                        </SettingGroup>
-                    </div>
-                </section>
-
-                <section v-show="activeSection === 'appearance'" class="page-layout single-page">
-                    <div class="settings-pane full">
-                        <PageHeader title="外观与显示" desc="选择控制台和灵动岛使用的深浅主题" />
-                        <SettingGroup title="主题" eyebrow="Theme">
-                            <SettingRow title="应用主题" desc="控制台默认跟随系统，也可强制深浅色">
-                                <div class="segmented">
-                                    <button :class="{ 'is-active': themeMode === 'dark' }"
-                                        @click="setThemeMode('dark')">深色</button>
-                                    <button :class="{ 'is-active': themeMode === 'light' }"
-                                        @click="setThemeMode('light')">浅色</button>
-                                    <button :class="{ 'is-active': themeMode === 'system' }"
-                                        @click="setThemeMode('system')">系统</button>
-                                </div>
-                            </SettingRow>
-                        </SettingGroup>
-                    </div>
-                </section>
-
-                <section v-show="activeSection === 'general'" class="page-layout single-page">
-                    <div class="settings-pane full">
-                        <PageHeader title="通用设置" desc="管理 FlowIsland 的系统启动行为" />
-                        <SettingGroup title="启动" eyebrow="Startup">
-                            <SettingRow title="开机启动" desc="登录 Windows 后自动启动 FlowIsland">
-                                <UiSwitch v-model="autoStart" @change="toggleAutoStart" />
                             </SettingRow>
                         </SettingGroup>
                     </div>
@@ -243,12 +172,15 @@
                                 <h3>FlowIsland</h3>
                                 <p>桌面灵动岛组件 · v{{ appVersion }}</p>
                             </div>
-                            <button class="primary-btn" :disabled="isChecking || isUpdating" @click="checkUpdate">
-                                {{ isUpdating ? `更新中 ${updateProgress}%` : (isChecking ? '检查中' : '检查更新') }}
-                            </button>
-                        </div>
-                        <div class="about-grid">
-                            <button @click="openProjectRepo"><Github :size="18" />GitHub</button>
+                            <div class="about-actions">
+                                <button class="primary-btn" :disabled="isChecking || isUpdating" @click="checkUpdate">
+                                    {{ isUpdating ? `更新中 ${updateProgress}%` : (isChecking ? '检查中' : '检查更新') }}
+                                </button>
+                                <button class="secondary-btn" @click="openProjectRepo">
+                                    <Github :size="17" />
+                                    GitHub
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -305,7 +237,6 @@ import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import {
     Activity,
-    Bell,
     CloudDownload,
     Cpu,
     Github,
@@ -314,8 +245,6 @@ import {
     Minus,
     Monitor,
     Music2,
-    Palette,
-    Settings,
     Sparkles,
     Wifi,
     X,
@@ -335,7 +264,7 @@ if (localStorage.getItem(MUSIC_ONLY_DEFAULTS_KEY) !== 'true') {
     localStorage.setItem(MUSIC_ONLY_DEFAULTS_KEY, 'true');
 }
 
-type NavId = 'island' | 'notify' | 'music' | 'monitor' | 'appearance' | 'general' | 'about';
+type NavId = 'island' | 'music' | 'monitor' | 'about';
 type IslandThemeMode = 'black' | 'white' | 'system';
 type ConsoleThemeMode = 'dark' | 'light' | 'system';
 type HardwareStats = {
@@ -361,7 +290,7 @@ const initialIslandTheme: IslandThemeMode = savedIslandTheme === 'black' || save
 const activeSection = ref<NavId>('island');
 const isWidgetVisible = ref(false);
 const autoStart = ref(false);
-const appVersion = ref('2.3.19');
+const appVersion = ref('2.3.20');
 const uploadSpeed = ref('0 B/s');
 const downloadSpeed = ref('0 B/s');
 const opacity = ref(Number(localStorage.getItem('nsd_island_opacity') || '30'));
@@ -409,11 +338,8 @@ const monitorVramDetail = ref('正在读取');
 
 const navItems = [
     { id: 'island' as const, label: '灵动岛', icon: Sparkles },
-    { id: 'notify' as const, label: '通知与消息', icon: Bell },
     { id: 'music' as const, label: '音乐与歌词', icon: Music2, badge: '实验' },
     { id: 'monitor' as const, label: '系统监控', icon: Activity },
-    { id: 'appearance' as const, label: '外观与显示', icon: Palette },
-    { id: 'general' as const, label: '通用设置', icon: Settings },
     { id: 'about' as const, label: '关于', icon: Info },
 ];
 
@@ -671,22 +597,6 @@ const applyWindowTheme = async (mode: ConsoleThemeMode) => {
 
 const handleSystemThemeChange = (event: MediaQueryListEvent) => {
     systemTheme.value = event.matches ? 'dark' : 'light';
-};
-
-const setThemeMode = (mode: string) => {
-    const nextMode: ConsoleThemeMode = mode === 'dark' || mode === 'light' ? mode : 'system';
-    const nextIslandTheme: IslandThemeMode = nextMode === 'dark'
-        ? 'black'
-        : nextMode === 'light' ? 'white' : 'system';
-
-    themeMode.value = nextMode;
-    localStorage.setItem('nsd_theme_mode', nextMode);
-
-    if (islandTheme.value !== nextIslandTheme) {
-        islandTheme.value = nextIslandTheme;
-    } else {
-        void applyWindowTheme(nextMode);
-    }
 };
 
 const minimizeWindow = async () => {
@@ -1125,7 +1035,7 @@ button {
 .preview-note,
 .app-source,
 .about-card,
-.about-grid button,
+.about-actions,
 .ghost-btn,
 .secondary-btn {
     display: flex;
@@ -1398,6 +1308,21 @@ button {
     margin-bottom: 14px;
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.045);
+}
+
+.category-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    align-items: stretch;
+}
+
+.category-grid .setting-group {
+    margin-bottom: 0;
+}
+
+.category-grid .setting-group:last-child {
+    grid-column: 1 / -1;
 }
 
 .group-head {
@@ -2221,24 +2146,9 @@ button {
     color: #9aa8bc;
 }
 
-.about-card .primary-btn {
+.about-actions {
     margin-left: auto;
-}
-
-.about-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 10px;
-}
-
-.about-grid button {
-    justify-content: center;
     gap: 8px;
-    height: 74px;
-    border-radius: 14px;
-    color: #dbe8fb;
-    background: #121a28;
-    border: 1px solid rgba(255, 255, 255, 0.045);
 }
 
 .modal-overlay {
@@ -2444,8 +2354,7 @@ button {
 .range-control strong,
 .check-item,
 .secondary-btn,
-.select,
-.about-grid button {
+.select {
     color: var(--fi-text-soft);
 }
 
@@ -2528,8 +2437,7 @@ button {
 .side-preview-card,
 .theme-preview,
 .metric-card,
-.about-card,
-.about-grid button {
+.about-card {
     background: var(--fi-surface);
     border-color: var(--fi-border);
 }
@@ -2743,6 +2651,14 @@ button {
     .page-layout.has-preview,
     .two-column-page {
         grid-template-columns: 1fr;
+    }
+
+    .category-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .category-grid .setting-group:last-child {
+        grid-column: auto;
     }
 
     .preview-panel {
