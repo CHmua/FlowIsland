@@ -23,12 +23,7 @@
                 </button>
             </div>
 
-            <div class="hardware-backdrop-wrap" v-if="showHardwareBackdropGlow">
-                <div class="hardware-backdrop-glow" :style="hardwareBackdropStyle"></div>
-            </div>
-
             <div class="island-core-content" :style="splitCoreStyle">
-                <div class="dashboard-fill-glow" v-if="showDashboardFillGlow" :style="dashboardFillStyle"></div>
                 <div class="inner-wrapper">
                     <transition @enter="onInnerEnter" @leave="onInnerLeave" :css="false">
                         <div class="msg-box" v-show="isMsgActive" key="msg" @click="handleMsgClick"
@@ -317,11 +312,6 @@ const resolvedIslandTheme = computed(() =>
 );
 const islandOpacityRatio = computed(() => clamp(islandOpacity.value / 100, 0, 1));
 const islandAlpha = computed(() => Math.pow(islandOpacityRatio.value, 1 / 2.2));
-const dashboardFillBackgroundSize = '100% 100%, 150% 150%, 150% 150%, 220% 100%';
-const dashboardFillBackgroundPosition = 'center, 0% 48%, 100% 52%, 0% 50%';
-const dashboardSplitBackgroundSize = '100% 100%, 150% 150%, 150% 150%, 220% 100%, 220% 100%';
-const dashboardSplitBackgroundPosition = 'center, 0% 48%, 100% 52%, 0% 50%, 0% 50%';
-
 // 修改后的 islandStyle
 const islandStyle = computed<CSSProperties>(() => {
     const alpha = islandAlpha.value;
@@ -335,7 +325,6 @@ const islandStyle = computed<CSSProperties>(() => {
 
     return {
         ...baseStyle,
-        backgroundColor: (isDefaultSpeedPrimary.value || isHardwarePrimary.value) ? 'transparent' : baseStyle.backgroundColor,
         width: `${currentWidth.value}px`,
         height: `${currentHeight.value}px`,
         position: 'relative', // 改为相对定位或保留，由父级负责居中
@@ -344,40 +333,6 @@ const islandStyle = computed<CSSProperties>(() => {
 
 const coreContentStyle = computed(() => {
     const alpha = islandAlpha.value;
-    if (resolvedIslandTheme.value === 'white') {
-        return {
-            backgroundColor: `rgba(255, 255, 255, ${alpha})`
-        };
-    }
-    return {
-        backgroundColor: `rgba(0, 0, 0, ${alpha})`
-    };
-});
-
-const dashboardPanelBaseStyle = computed(() => {
-    const alpha = islandAlpha.value;
-    const isDashboardMode = isDefaultSpeedPrimary.value || isHardwarePrimary.value;
-
-    if (isDashboardMode) {
-        const fill = `rgba(0, 0, 0, ${alpha})`;
-        const underlayAlpha = 1 - alpha;
-        if (isGlowBorderEnabled.value) {
-            return {
-                backgroundColor: fill,
-                backgroundImage: `linear-gradient(${fill}, ${fill}), ${buildDashboardFillGradient(borderColors.value, underlayAlpha)}`,
-                backgroundOrigin: 'padding-box, padding-box, padding-box, padding-box',
-                backgroundClip: 'padding-box, padding-box, padding-box, padding-box',
-                backgroundSize: dashboardFillBackgroundSize,
-                backgroundPosition: dashboardFillBackgroundPosition,
-                animation: 'dashboard-panel-fill-flow 12s ease-in-out infinite alternate',
-                willChange: 'background-position',
-            };
-        }
-        return {
-            backgroundColor: fill
-        };
-    }
-
     if (resolvedIslandTheme.value === 'white') {
         return {
             backgroundColor: `rgba(255, 255, 255, ${alpha})`
@@ -451,24 +406,9 @@ const borderColors = ref<string[]>(DEFAULT_BORDER_COLORS.map((color) => rgbToCss
 const albumBorderStyle = computed<CSSProperties>(() => ({
     opacity: glowOpacity.value,
     backgroundImage: (isDefaultSpeedPrimary.value || isHardwarePrimary.value)
-        ? buildDashboardGlowGradient(borderColors.value)
+        ? buildWideIslandGlowGradient(borderColors.value)
         : buildBorderGradient(borderColors.value),
 }));
-
-const hardwareBackdropStyle = computed<CSSProperties>(() => {
-    return {
-        opacity: glowOpacity.value,
-        backgroundImage: buildDashboardGlowGradient(borderColors.value),
-    };
-});
-
-const dashboardFillStyle = computed<CSSProperties>(() => {
-    const underlayAlpha = 1 - islandAlpha.value;
-    return {
-        opacity: clamp(underlayAlpha, 0, 1),
-        backgroundImage: buildDashboardFillGradient(borderColors.value, underlayAlpha),
-    };
-});
 
 const splitMusicBubbleStyle = computed<CSSProperties>(() => {
     if (!isGlowBorderEnabled.value) {
@@ -486,23 +426,16 @@ const splitMusicBubbleStyle = computed<CSSProperties>(() => {
 
 const splitCoreStyle = computed<CSSProperties>(() => {
     if (!isSplitActivity.value || !isGlowBorderEnabled.value) {
-        return (isDefaultSpeedPrimary.value || isHardwarePrimary.value)
-            ? dashboardPanelBaseStyle.value
-            : coreContentStyle.value;
+        return coreContentStyle.value;
     }
 
-    const fill = dashboardPanelBaseStyle.value.backgroundColor ?? `rgba(0, 0, 0, ${islandAlpha.value})`;
-    const underlayAlpha = 1 - islandAlpha.value;
+    const fill = coreContentStyle.value.backgroundColor ?? `rgba(0, 0, 0, ${islandAlpha.value})`;
     return {
-        ...dashboardPanelBaseStyle.value,
+        ...coreContentStyle.value,
         border: '2px solid transparent',
-        backgroundImage: `linear-gradient(${fill}, ${fill}), ${buildDashboardFillGradient(borderColors.value, underlayAlpha)}, ${buildDashboardGlowGradient(borderColors.value, glowOpacity.value)}`,
-        backgroundOrigin: 'border-box, border-box, border-box, border-box, border-box',
-        backgroundClip: 'padding-box, padding-box, padding-box, padding-box, border-box',
-        backgroundSize: dashboardSplitBackgroundSize,
-        backgroundPosition: dashboardSplitBackgroundPosition,
-        animation: 'split-pill-reveal 0.48s cubic-bezier(0.18, 1.05, 0.2, 1) both, dashboard-split-panel-flow 12s ease-in-out infinite alternate',
-        willChange: 'transform, opacity, background-position',
+        backgroundImage: `linear-gradient(${fill}, ${fill}), ${buildBorderGradient(borderColors.value, glowOpacity.value)}`,
+        backgroundOrigin: 'border-box',
+        backgroundClip: 'padding-box, border-box',
     };
 });
 
@@ -636,7 +569,7 @@ function mixRgb(a: RgbColor, b: RgbColor, amount: number): RgbColor {
     };
 }
 
-function buildDashboardPalette(colors: string[]) {
+function buildWideIslandPalette(colors: string[]) {
     const parsed = colors
         .map(parseCssRgb)
         .filter((color): color is RgbColor => Boolean(color));
@@ -671,21 +604,10 @@ function buildBorderGradient(colors: string[], alpha = 1) {
     return `conic-gradient(from 0deg, ${appliedPalette[0]} 0deg, ${appliedPalette[1]} 60deg, ${appliedPalette[2]} 120deg, ${appliedPalette[3]} 180deg, ${appliedPalette[4]} 240deg, ${appliedPalette[5]} 300deg, ${appliedPalette[0]} 360deg)`;
 }
 
-function buildDashboardGlowGradient(colors: string[], alpha = 1) {
-    const palette = buildDashboardPalette(colors);
+function buildWideIslandGlowGradient(colors: string[], alpha = 1) {
+    const palette = buildWideIslandPalette(colors);
     const appliedPalette = alpha < 1 ? palette.map((color) => colorWithAlpha(color, alpha)) : palette;
     return `linear-gradient(105deg, ${appliedPalette[0]} 0%, ${appliedPalette[1]} 42%, ${appliedPalette[2]} 72%, ${appliedPalette[1]} 100%)`;
-}
-
-function buildDashboardFillGradient(colors: string[], alpha = 1) {
-    const appliedAlpha = clamp(alpha, 0, 1);
-    const [primary, anchor, secondary] = buildDashboardPalette(colors)
-        .map((color) => colorWithAlpha(color, appliedAlpha));
-    return [
-        `radial-gradient(circle at 18% 48%, ${primary} 0%, transparent 34%)`,
-        `radial-gradient(circle at 82% 52%, ${secondary} 0%, transparent 36%)`,
-        `linear-gradient(105deg, ${anchor} 0%, ${primary} 46%, ${secondary} 100%)`,
-    ].join(', ');
 }
 
 function relativeLuminance(color: RgbColor) {
@@ -1506,12 +1428,6 @@ const isDefaultSpeedPrimary = computed(() => false);
 const showFlowBorder = computed(() =>
     isGlowBorderEnabled.value
     && (isMsgActive.value || isMusicPrimary.value || isHardwarePrimary.value)
-);
-const showHardwareBackdropGlow = computed(() =>
-    isHardwarePrimary.value && isGlowBorderEnabled.value
-);
-const showDashboardFillGlow = computed(() =>
-    isHardwarePrimary.value && isGlowBorderEnabled.value
 );
 const reportedIslandVisible = ref(false);
 const shouldDisplayIsland = computed(() =>
@@ -2651,62 +2567,28 @@ onUnmounted(() => {
 
 .island-container.is-default-dashboard .rainbow-border-glow,
 .island-container.is-hardware-dashboard .rainbow-border-glow {
-    width: auto;
-    height: auto;
-    inset: 0;
-    padding: 2px;
-    border-radius: inherit;
-    background-size: 220% 100%;
-    animation: dashboard-border-flow 8s ease-in-out infinite alternate;
-    filter: blur(1px) saturate(1.18) brightness(1.06);
-    transform: translateZ(0) scale(1.01);
-    -webkit-mask:
-        linear-gradient(#000 0 0) content-box,
-        linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-}
-
-.hardware-backdrop-wrap {
-    position: absolute;
-    left: 52px;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    z-index: 0;
-    pointer-events: none;
-    border-radius: 100px;
-    overflow: hidden;
-}
-
-.hardware-backdrop-glow {
-    position: absolute;
-    inset: 0;
-    padding: 2px;
-    border-radius: inherit;
-    background-size: cover;
-    background-size: 220% 100%;
-    animation: dashboard-border-flow 8s ease-in-out infinite alternate;
-    filter: blur(1px) saturate(1.18) brightness(1.06);
-    transform: translateZ(0) scale(1.01);
+    width: calc(100% + 160px);
+    height: 180px;
+    top: calc(50% - 90px);
+    left: -80px;
+    border-radius: 50%;
+    background-size: 180% 100%;
+    animation: wide-island-glow-flow 10s ease-in-out infinite alternate;
+    filter: blur(28px) saturate(1.45) brightness(1.08);
+    transform: translateZ(0) scale(1.04);
     transform-origin: center;
     will-change: transform, filter;
-    -webkit-mask:
-        linear-gradient(#000 0 0) content-box,
-        linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
 }
 
-@keyframes dashboard-border-flow {
+@keyframes wide-island-glow-flow {
     from {
         background-position: 0% 50%;
-        filter: blur(1px) saturate(1.18) brightness(1.06);
+        transform: translateZ(0) scale(1.04);
     }
 
     to {
         background-position: 100% 50%;
-        filter: blur(1px) saturate(1.18) brightness(1.06);
+        transform: translateZ(0) scale(1.08);
     }
 }
 
@@ -2731,21 +2613,6 @@ onUnmounted(() => {
         opacity 0.25s ease;
 }
 
-.dashboard-fill-glow {
-    position: absolute;
-    width: 1120px;
-    height: 1120px;
-    top: calc(50% - 560px);
-    left: calc(50% - 560px);
-    z-index: 0;
-    pointer-events: none;
-    background-size: 150% 150%, 150% 150%, 220% 100%;
-    animation: dashboard-fill-flow 12s ease-in-out infinite alternate;
-    filter: blur(72px) saturate(1.16) brightness(1.06);
-    transform-origin: center;
-    will-change: transform, filter;
-}
-
 .island-container.is-split-mode .island-core-content {
     flex: 1;
     width: auto;
@@ -2755,41 +2622,7 @@ onUnmounted(() => {
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
-@keyframes dashboard-fill-flow {
-    from {
-        background-position: 0% 48%, 100% 52%, 0% 50%;
-        transform: scale(1.08);
-        filter: blur(72px) saturate(1.16) brightness(1.06);
-    }
-
-    to {
-        background-position: 38% 52%, 62% 48%, 100% 50%;
-        transform: scale(1.1);
-        filter: blur(72px) saturate(1.16) brightness(1.06);
-    }
-}
-
 /* 4. 顺时针匀速旋转 */
-@keyframes dashboard-panel-fill-flow {
-    from {
-        background-position: center, 0% 48%, 100% 52%, 0% 50%;
-    }
-
-    to {
-        background-position: center, 38% 52%, 62% 48%, 100% 50%;
-    }
-}
-
-@keyframes dashboard-split-panel-flow {
-    from {
-        background-position: center, 0% 48%, 100% 52%, 0% 50%, 0% 50%;
-    }
-
-    to {
-        background-position: center, 38% 52%, 62% 48%, 100% 50%, 100% 50%;
-    }
-}
-
 @keyframes rainbow-rotate {
     from {
         transform: rotate(0deg) scale(1.08);

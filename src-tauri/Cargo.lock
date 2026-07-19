@@ -1048,7 +1048,7 @@ dependencies = [
 
 [[package]]
 name = "flow-island"
-version = "2.3.20"
+version = "2.3.21"
 dependencies = [
  "base64 0.22.1",
  "reqwest 0.12.28",

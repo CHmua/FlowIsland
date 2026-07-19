@@ -290,7 +290,7 @@ const initialIslandTheme: IslandThemeMode = savedIslandTheme === 'black' || save
 const activeSection = ref<NavId>('island');
 const isWidgetVisible = ref(false);
 const autoStart = ref(false);
-const appVersion = ref('2.3.20');
+const appVersion = ref('2.3.21');
 const uploadSpeed = ref('0 B/s');
 const downloadSpeed = ref('0 B/s');
 const opacity = ref(Number(localStorage.getItem('nsd_island_opacity') || '30'));
