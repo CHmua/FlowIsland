@@ -4657,13 +4657,43 @@ async fn download_and_install_update(
         .map_err(|err| format!("准备更新安装包失败：{}", err))?;
     emit_update_progress(&app, "校验完成，正在启动安装…", downloaded, total, 100);
 
-    let mut command = Command::new(&installer_path);
-    command.args(["/S", "/UPDATE"]);
-    #[cfg(target_os = "windows")]
-    command.creation_flags(0x08000000);
-    command
-        .spawn()
-        .map_err(|err| format!("无法启动更新安装程序：{}", err))?;
+    // GUI builds do not own valid console handles. ShellExecute avoids inheriting
+    // those handles and also follows the normal Windows executable launch path.
+    let operation = std::ffi::OsStr::new("open")
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<u16>>();
+    let installer = installer_path
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<u16>>();
+    let parameters = std::ffi::OsStr::new("/S /UPDATE")
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<u16>>();
+    let working_directory = temp_dir
+        .as_os_str()
+        .encode_wide()
+        .chain(Some(0))
+        .collect::<Vec<u16>>();
+    let shell_result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            installer.as_ptr(),
+            parameters.as_ptr(),
+            working_directory.as_ptr(),
+            SW_SHOWNORMAL,
+        )
+    };
+    let shell_code = shell_result as isize;
+    if shell_code <= 32 {
+        return Err(format!(
+            "无法启动更新安装程序：Windows ShellExecute 错误 {}",
+            shell_code
+        ));
+    }
 
     tokio::time::sleep(Duration::from_millis(350)).await;
     app.exit(0);
