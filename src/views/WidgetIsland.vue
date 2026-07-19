@@ -41,8 +41,8 @@
 
                     <transition @enter="onInnerEnter" @leave="onInnerLeave" :css="false">
                         <div class="speed-box default-stats-box hardware-stats-box"
-                            v-show="isHardwarePrimary && !isMsgActive" key="hardware" :style="hardwareGridStyle">
-                            <div v-if="showCpuMetric" class="default-stat-item default-stat-compute">
+                            v-show="isHardwarePrimary && !isMsgActive" key="hardware">
+                            <div v-if="showCpuMetric" class="default-stat-item default-stat-compute metric-cpu">
                                 <div class="default-stat-icon">
                                     <Cpu class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
@@ -55,7 +55,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div v-if="showGpuMetric" class="default-stat-item default-stat-compute">
+                            <div v-if="showGpuMetric" class="default-stat-item default-stat-compute metric-gpu">
                                 <div class="default-stat-icon">
                                     <CircuitBoard class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
@@ -68,7 +68,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div v-if="showGpuMetric" class="default-stat-item default-stat-memory">
+                            <div v-if="showGpuMetric" class="default-stat-item default-stat-memory metric-vram">
                                 <div class="default-stat-icon">
                                     <Database class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
@@ -80,7 +80,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div v-if="showMemoryMetric" class="default-stat-item default-stat-memory">
+                            <div v-if="showMemoryMetric" class="default-stat-item default-stat-memory metric-ram">
                                 <div class="default-stat-icon">
                                     <MemoryStick class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
@@ -92,7 +92,7 @@
                                     </div>
                                 </div>
                             </div>
-                            <div v-if="showNetworkMetric" class="default-stat-item default-stat-network">
+                            <div v-if="showNetworkMetric" class="default-stat-item default-stat-network metric-network">
                                 <div class="default-stat-icon">
                                     <Wifi class="metric-icon-glyph" :stroke-width="1.8" aria-hidden="true" />
                                 </div>
@@ -1975,9 +1975,6 @@ const hardwareMetricWidths = computed(() => {
 
     return metricWidths;
 });
-const hardwareGridStyle = computed<CSSProperties>(() => ({
-    gridTemplateColumns: hardwareMetricWidths.value.map((width) => `${width}px`).join(' '),
-}));
 const hardwareTargetWidth = computed(() => {
     const metricWidths = hardwareMetricWidths.value;
 
@@ -2756,8 +2753,7 @@ onUnmounted(() => {
 }
 
 .hardware-stats-box {
-    display: grid;
-    grid-auto-flow: column;
+    display: flex;
     align-items: center;
     justify-content: center;
     gap: 10px;
@@ -2766,8 +2762,24 @@ onUnmounted(() => {
 }
 
 .hardware-stats-box .default-stat-item {
-    width: 100%;
     min-width: 0;
+}
+
+.hardware-stats-box .metric-cpu,
+.hardware-stats-box .metric-gpu {
+    flex: 0 0 168px;
+}
+
+.hardware-stats-box .metric-vram {
+    flex: 0 0 136px;
+}
+
+.hardware-stats-box .metric-ram {
+    flex: 0 0 148px;
+}
+
+.hardware-stats-box .metric-network {
+    flex: 0 0 196px;
 }
 
 .hardware-stats-box .default-stat-copy {
